@@ -72,3 +72,55 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+
+/* === Card styling & animations === */
+@layer utilities {
+  .card-base {
+    @apply relative rounded-xl border bg-white overflow-hidden;
+    @apply border-slate-300 shadow-md;
+    width: 70px; height: 100px; /* ukuran kartu */
+    transform-style: preserve-3d;
+    transition: transform 150ms ease, box-shadow 150ms ease;
+  }
+  .card-base:hover {
+    transform: translateY(-8px) rotateZ(-0.5deg);
+    box-shadow: 0 12px 28px rgba(0,0,0,.28);
+  }
+  .card-face, .card-back {
+    @apply absolute inset-0 rounded-xl;
+    backface-visibility: hidden;
+  }
+  .card-back {
+    background-image: radial-gradient(circle at 30% 30%, #fca5a5 0%, #ef4444 60%, #7f1d1d 100%);
+    @apply border-2 border-red-300;
+  }
+  .card-label { @apply absolute top-1 left-1 text-sm font-mono; }
+  .card-label-rt { @apply absolute bottom-1 right-1 text-sm font-mono rotate-180; transform-origin: center; }
+
+  .is-red  { @apply text-rose-600; }
+  .is-black{ @apply text-slate-800; }
+  .card-center-pip { @apply absolute inset-0 flex items-center justify-center text-2xl; opacity:.95 }
+
+  /* flip container for table reveal (jika nanti dibutuhkan) */
+  .flip-wrap { perspective: 800px; }
+  .flip-inner { position: relative; transform-style: preserve-3d; transition: transform 260ms ease; }
+  .flip-inner.is-flipped { transform: rotateY(180deg); }
+  .flip-front, .flip-back { position: absolute; inset:0; backface-visibility: hidden; }
+  .flip-back  { transform: rotateY(180deg); }
+
+  /* small backs for opponents (jika nanti dibutuhkan) */
+  .card-small { width: 40px; height: 60px; }
+
+  /* deal pop-in */
+  .animate-deal { animation: deal-in 220ms ease-out; }
+  @keyframes deal-in {
+    from { transform: scale(.7) translateY(-8px); opacity: 0; }
+    to   { transform: scale(1)  translateY(0);    opacity: 1; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-base:hover { transform: none !important; }
+  .animate-deal { animation: none !important; }
+}

@@ -7,14 +7,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * - Bid dipilih dari kartu yang dimiliki (rank→count: 2–10=nilai, J/Q/K=0, A=1)
  * - Truf = bid tertinggi (seri: C < D < H < S)
  * - Mode: total bet > 13 → ATAS; <13 → BAWAH (target = bid−1; =13 dianggap ATAS)
- *   (Di kode ini: ATAS → target = bid + 1 ; BAWAH → target = bid − 1)
+ * (Di kode ini: ATAS → target = bid + 1 ; BAWAH → target = bid − 1)
  * - Main: wajib ikut suit; tak boleh lead truf sebelum broken (kecuali kartu di tangan tinggal truf)
  * - Trump Broken: saat void lalu buang truf, atau lead truf (sah)
  * - Play: kartu truf disembunyikan; dibuka saat 4 kartu lengkap → jeda → resolve
  * - Skor (versi kamu):
- *    - got === target → +target
- *    - got < target  → (ATAS ? −2*(target−got) : −(target−got))
- *    - got > target  → (BAWAH ? −2*(got−target) : −(got−target))
+ * - got === target → +target
+ * - got < target  → (ATAS ? −2*(target−got) : −(target−got))
+ * - got > target  → (BAWAH ? −2*(got−target) : −(got−target))
  */
 
 const SUITS = [
@@ -564,13 +564,13 @@ export default function TrufmanApp() {
 
           {/* Bot hands (backs) */}
           <div className="absolute top-10 left-1/2 -translate-x-1/2 flex gap-2">
-            {hands[2]?.map((_, i) => <CardBack key={i} small />)}
+            {hands[2]?.map((_, i) => <SimpleCardBack key={i} small />)}
           </div>
           <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-            {hands[1]?.map((_, i) => <CardBack key={i} vertical small />)}
+            {hands[1]?.map((_, i) => <SimpleCardBack key={i} vertical small />)}
           </div>
           <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-            {hands[3]?.map((_, i) => <CardBack key={i} vertical small />)}
+            {hands[3]?.map((_, i) => <SimpleCardBack key={i} vertical small />)}
           </div>
 
           {/* Center table cards */}
@@ -597,7 +597,7 @@ export default function TrufmanApp() {
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-center">
               {hands[0]?.map((c) => (
-                <CardFace
+                <CardFace // <-- MENGGUNAKAN KOMPONEN BARU
                   key={c.id}
                   card={c}
                   disabled={!canPlay(0, c)}
@@ -676,7 +676,7 @@ export default function TrufmanApp() {
 
                   {bid ? (
                     <div className="h-10 flex items-center">
-                      {bidsRevealed ? <CardFace card={bidCard} disabled /> : <CardBack small />}
+                      {bidsRevealed ? <SimpleCardFace card={bidCard} disabled /> : <SimpleCardBack small />}
                       <span className="ml-2 text-xs text-slate-500">{bidsRevealed ? "Terbuka" : "Tertutup"}</span>
                     </div>
                   ) : (
@@ -778,11 +778,42 @@ function Badge({ children }) {
   return <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs shadow-sm">{children}</span>;
 }
 
-function CardBack({ small, vertical }) {
+// =========================================================
+//  KUMPULAN KOMPONEN KARTU
+// =========================================================
+
+// --- Versi BARU (hanya untuk tangan pemain) ---
+function CardBack({ small }) { // Prop small & vertical diabaikan, ukuran diatur oleh CSS
+  const cls = small ? "card-back card-small" : "card-back";
+  return <div className={`card-base ${small ? 'card-small' : ''} animate-deal`}><div className={cls}></div></div>;
+}
+function CardFace({ card, onClick, disabled }) {
+  const red = card.suit === "H" || card.suit === "D";
+  const colorCls = red ? "is-red" : "is-black";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={card.label}
+      // ukuran kartu diatur di index.css
+      className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}
+    >
+      <div className={`card-face ${colorCls}`}>
+        <div className="card-label">{card.label}</div>
+        <div className="card-label-rt">{card.label}</div>
+        <div className="card-center-pip">{card.suitIcon}</div>
+      </div>
+    </button>
+  );
+}
+
+
+// --- Versi LAMA / SIMPLE (untuk bot & meja) ---
+function SimpleCardBack({ small, vertical }) {
   const cls = `bg-red-600 rounded-lg border-2 border-red-300 shadow ${small ? (vertical ? "h-6 w-4" : "h-6 w-4") : "h-10 w-7"}`;
   return <div className={cls} />;
 }
-function CardFace({ card, onClick, disabled }) {
+function SimpleCardFace({ card, onClick, disabled }) {
   const red = card.suit === "H" || card.suit === "D";
   return (
     <button
@@ -795,14 +826,19 @@ function CardFace({ card, onClick, disabled }) {
     </button>
   );
 }
+
 function TableSlot({ label, play }) {
   return (
     <div className="h-20 w-28 bg-green-800/40 rounded-xl border border-green-900 flex items-center justify-center">
-      {play ? (play.hidden ? <CardBack small /> : <CardFace card={play.card} disabled />)
+      {play ? (play.hidden ? <SimpleCardBack small /> : <SimpleCardFace card={play.card} disabled />)
             : <span className="text-emerald-200 text-xs">{label}</span>}
     </div>
   );
 }
+
+// =========================================================
+//  Komponen UI lainnya...
+// =========================================================
 
 function PlayerBidForm({ handBySuit, setBid, disabled }) {
   const [suit, setSuit] = useState("S");
@@ -969,7 +1005,7 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
           </button>
         </div>
 
-        <div className="p-5 space-y-4 text-sm text-slate-700">
+        <div className="p-5 space-y-4 text-sm text-slate-700 max-h-[80vh] overflow-y-auto">
           <section>
             <h4 className="font-semibold text-slate-900">Tujuan</h4>
             <p>Setiap pemain menentukan bid lalu mencoba mencapai <em>target</em> triknya setelah mode ditentukan (ATAS/BAWAH).</p>
@@ -1056,4 +1092,4 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
       </div>
     </div>
   );
-} 
+}
