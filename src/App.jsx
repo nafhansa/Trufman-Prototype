@@ -2,18 +2,26 @@ import { cloudLoad, cloudSave, debounce } from './lib/cloudMemory.js'
 import { createLearningBot } from "./bots/learningBot.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-function playSound(src) {
+// ====== Audio helpers & URLs ======
+function playSound(src, vol = 1.0) {
   try {
-    const sound = new Audio(src);
-    sound.play().catch(() => {});
+    const a = new Audio(src);
+    a.volume = Math.max(0, Math.min(1, vol));
+    a.play().catch(() => {});
   } catch (_) {}
 }
+const MUSIC_URL =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3";
+const SFX_CARD_NORMAL =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-normal.wav";
+const SFX_CARD_TRUMP =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-trump.wav";
 
-const SFX_URLS = {
-  normal: "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-normal.wav",
-  trump:  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-trump.wav",
-};
+function playCardPlace(isTrump) {
+  playSound(isTrump ? SFX_CARD_TRUMP : SFX_CARD_NORMAL, 1.0);
+}
 
+// ====== Game helpers ======
 const SUITS = [
   { key: "C", label: "Clover", icon: "♣" },
   { key: "D", label: "Diamond", icon: "♦" },
@@ -62,7 +70,6 @@ function evaluateTrick(plays, trumpSuit, leadSuit) {
   }
   return winner.player;
 }
-
 function countBySuit(hand) {
   return hand.reduce((m, c) => ((m[c.suit] = (m[c.suit] || 0) + 1), m), {});
 }
@@ -94,12 +101,17 @@ function botPlayCardFallback(hand, leadSuit, trump) {
 const SeatName = ["Kamu", "Renjana", "Harriet", "Cleopatra"];
 
 export default function TrufmanApp() {
+  // ===== Round & dealer =====
   const [round, setRound] = useState(1);
   const [dealer, setDealer] = useState(0);
   const [totalScores, setTotalScores] = useState([0, 0, 0, 0]);
+
+  // ===== Deck & hands =====
   const freshDeck = useMemo(() => shuffle(makeDeck()), [round]);
   const initialHands = useMemo(() => deal(freshDeck), [round]);
   const [hands, setHands] = useState(initialHands);
+
+  // ===== Bidding =====
   const [bids, setBids] = useState([null, null, null, null]);
   const [bidsRevealed, setBidsRevealed] = useState(false);
   const [trump, setTrump] = useState(null);
@@ -107,16 +119,22 @@ export default function TrufmanApp() {
   const [targets, setTargets] = useState([0, 0, 0, 0]);
   const [phase, setPhase] = useState("bidding");
   const [trumpBroken, setTrumpBroken] = useState(false);
+
+  // ===== Play =====
   const [currentPlayer, setCurrentPlayer] = useState((dealer + 1) % 4);
   const [leadSuit, setLeadSuit] = useState(null);
   const [table, setTable] = useState([]);
   const [tricksWon, setTricksWon] = useState([0, 0, 0, 0]);
+
+  // ===== Resolver / timers =====
   const [resolving, setResolving] = useState(false);
   const resolvingRef = useRef(false);
   const [resolveDelayMs, setResolveDelayMs] = useState(1200);
   const [botDelayMs, setBotDelayMs] = useState(600);
   const [resolveCountdownMs, setResolveCountdownMs] = useState(0);
   const [botCountdownMs, setBotCountdownMs] = useState(0);
+
+  // ===== LearningBot integration: memory & refs =====
   const [voidMap, setVoidMap] = useState([{}, {}, {}, {}]);
   const [trumpsPlayed, setTrumpsPlayed] = useState(0);
   const [played, setPlayed] = useState([]);
@@ -124,62 +142,56 @@ export default function TrufmanApp() {
   const MEMKEY = 'trufman_bot_memory_v3';
   const seatsToSync = [1, 2, 3];
   const [cloudReady, setCloudReady] = useState(false);
+
+  // === How To ===
   const [showHowTo, setShowHowTo] = useState(false);
 
+  // ====== Background music & audio unlock ======
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const audioRef = useRef(null);
 
-  // SFX pools
-  const sfxPools = useRef({ normal: [], trump: [] });
-  const sfxIndex = useRef({ normal: 0, trump: 0 });
-
+  // Setup music
   useEffect(() => {
     if (!audioRef.current) {
-      audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3');
+      audioRef.current = new Audio(MUSIC_URL);
       audioRef.current.loop = true;
-      audioRef.current.volume = 0.2;
+      audioRef.current.volume = 0.3;
     }
   }, []);
 
+  // Unlock audio API & prewarm card SFX at first click
+  function unlockAudio() {
+    try {
+      const silent = new Audio();
+      silent.muted = true;
+      silent.play().catch(() => {});
+    } catch (_) {}
+    [SFX_CARD_NORMAL, SFX_CARD_TRUMP].forEach(src => {
+      try {
+        const a = new Audio(src);
+        a.volume = 0;
+        a.play().then(() => a.pause()).catch(() => {});
+      } catch (_) {}
+    });
+  }
   useEffect(() => {
-    const buildPool = (url, count = 8, vol = 1.0) =>
-      Array.from({ length: count }, () => {
-        const a = new Audio(url);
-        a.preload = 'auto';
-        a.crossOrigin = 'anonymous';
-        a.volume = vol;
-        return a;
-      });
-    sfxPools.current.normal = buildPool(SFX_URLS.normal, 8, 1.0);
-    sfxPools.current.trump  = buildPool(SFX_URLS.trump,  8, 1.0);
+    window.addEventListener("click", unlockAudio, { once: true });
+    return () => window.removeEventListener("click", unlockAudio);
   }, []);
 
-  function playCardSfx(isTrump) {
-    const key = isTrump ? 'trump' : 'normal';
-    const pool = sfxPools.current[key];
-    if (!pool?.length) return;
-    const i = sfxIndex.current[key] % pool.length;
-    sfxIndex.current[key] = i + 1;
-    const a = pool[i];
-    try {
-      a.currentTime = 0;
-      a.playbackRate = 0.96 + Math.random() * 0.08;
-      a.play().catch(() => {});
-    } catch (_) {}
-  }
-
   function toggleMusic() {
+    if (!audioRef.current) return;
     if (isMusicPlaying) audioRef.current.pause();
     else audioRef.current.play().catch(() => {});
     setIsMusicPlaying(!isMusicPlaying);
   }
 
+  // ====== Cloud sync for bot memory ======
   async function syncDownAll() {
     for (const s of seatsToSync) {
       const payload = await cloudLoad(s);
       if (payload) {
-        try { localStorage.setItem(`${MEMKEY}:seat:${s}`, JSON.stringify(payload)); }
-        catch (_) { }
+        try { localStorage.setItem(`${MEMKEY}:seat:${s}`, JSON.stringify(payload)); } catch (_) {}
       }
     }
   }
@@ -187,7 +199,7 @@ export default function TrufmanApp() {
     for (const s of seatsToSync) {
       const raw = localStorage.getItem(`${MEMKEY}:seat:${s}`);
       if (raw) {
-        try { await cloudSave(s, JSON.parse(raw)); } catch (_) { }
+        try { await cloudSave(s, JSON.parse(raw)); } catch (_) {}
       }
     }
   }, 1000);
@@ -203,18 +215,20 @@ export default function TrufmanApp() {
     return () => { alive = false; };
   }, [phase]);
 
+  // ===== Derived =====
   const allBidsIn = bids.every(Boolean);
   const sumBids = bids.reduce((a, b) => a + (b?.count || 0), 0);
   const highestBidIdx = allBidsIn
     ? bids.reduce((best, b, i) => {
-      if (best === -1) return i;
-      const cur = bids[best];
-      if (b.count > cur.count) return i;
-      if (b.count === cur.count && suitOrder[b.suit] > suitOrder[cur.suit]) return i;
-      return best;
-    }, -1)
+        if (best === -1) return i;
+        const cur = bids[best];
+        if (b.count > cur.count) return i;
+        if (b.count === cur.count && suitOrder[b.suit] > suitOrder[cur.suit]) return i;
+        return best;
+      }, -1)
     : -1;
 
+  // ===== Player bid options =====
   const handBySuit = useMemo(() => {
     const map = { C: [], D: [], H: [], S: [] };
     for (const c of hands[0] || []) map[c.suit].push(c.rank);
@@ -223,7 +237,7 @@ export default function TrufmanApp() {
   }, [hands]);
 
   function setPlayerBid(suit, rank) {
-    playSound('/sounds/ui-click.mp3');
+    playSound('/sounds/ui-click.mp3', 0.8);
     if (!rank || !suit) return;
     const valid = handBySuit[suit]?.includes(Number(rank));
     if (!valid) return;
@@ -232,6 +246,7 @@ export default function TrufmanApp() {
     setBids(nb);
   }
 
+  // ====== Instansiasi / reuse bot saat bidding dimulai ======
   useEffect(() => {
     if (phase !== "bidding" || !cloudReady) return;
     const arr = botRefs.current.slice();
@@ -239,7 +254,13 @@ export default function TrufmanApp() {
       if (!arr[p]) {
         arr[p] = createLearningBot({
           seat: p,
-          getState: () => ({ trump, leadSuit, mode, bids, targets, tricksWon, voidMap, trumpsPlayed, played, table, currentPlayer, round, SUITS, suitOrder }),
+          getState: () => ({
+            trump, leadSuit, mode,
+            bids, targets, tricksWon,
+            voidMap, trumpsPlayed, played,
+            table, currentPlayer, round,
+            SUITS, suitOrder
+          }),
           memoryKey: "trufman_bot_memory_v3"
         });
       } else if (typeof arr[p].setSeat === "function") {
@@ -249,6 +270,7 @@ export default function TrufmanApp() {
     botRefs.current = arr;
   }, [phase, round, cloudReady, trump, leadSuit, mode, bids, targets, tricksWon, voidMap, trumpsPlayed, played, table, currentPlayer]);
 
+  // ====== Bots pilih bid (pakai learningBot → fallback) ======
   useEffect(() => {
     if (phase !== "bidding" || !cloudReady) return;
     const nb = [...bids];
@@ -256,7 +278,9 @@ export default function TrufmanApp() {
     for (let p = 1; p <= 3; p++) {
       if (!nb[p]) {
         const bot = botRefs.current[p];
-        const pick = bot?.chooseBid ? bot.chooseBid(hands[p], { betFromRank, suitOrder, SUITS, rankLabel }) : botChooseBidFallback(hands[p]);
+        const pick = bot?.chooseBid
+          ? bot.chooseBid(hands[p], { betFromRank, suitOrder, SUITS, rankLabel })
+          : botChooseBidFallback(hands[p]);
         nb[p] = pick;
         changed = true;
       }
@@ -264,37 +288,48 @@ export default function TrufmanApp() {
     if (changed) setBids(nb);
   }, [phase, hands, bids, cloudReady]);
 
+  // ====== Reveal bids serentak ======
   useEffect(() => {
     if (phase !== "bidding") return;
     if (allBidsIn && !bidsRevealed) setBidsRevealed(true);
   }, [allBidsIn, phase, bidsRevealed]);
 
+  // ====== Start Play ======
   function startPlay() {
     if (!allBidsIn) return;
-    playSound('/sounds/new-round.mp3');
+    playSound('/sounds/new-round.mp3', 0.9);
     const trumpKey = bids[highestBidIdx].suit;
     setTrump(trumpKey);
     const below = sumBids < 13;
     setMode(below ? "BAWAH" : "ATAS");
     const tgt = bids.map((b) => (below ? Math.max(0, b.count - 1) : b.count + 1));
     setTargets(tgt);
+
     setPhase("play");
     setCurrentPlayer((dealer + 1) % 4);
     setLeadSuit(null);
     setTable([]);
     setTricksWon([0, 0, 0, 0]);
     setTrumpBroken(false);
+
+    // reset pengetahuan ronde
     setVoidMap([{}, {}, {}, {}]);
     setTrumpsPlayed(0);
     setPlayed([]);
+
+    // reset resolver state
     setResolving(false);
     resolvingRef.current = false;
     setResolveCountdownMs(0);
     setBotCountdownMs(0);
   }
 
+  // ====== Rules ======
   function canPlay(pid, card) {
-    if (phase !== "play" || resolving || pid !== currentPlayer) return false;
+    if (phase !== "play") return false;
+    if (resolving) return false;
+    if (pid !== currentPlayer) return false;
+
     if (!leadSuit) {
       if (card.suit === trump && !trumpBroken) {
         const hasNonTrump = hands[pid].some((c) => c.suit !== trump);
@@ -302,6 +337,7 @@ export default function TrufmanApp() {
       }
       return true;
     }
+
     const hasLead = hands[pid].some((c) => c.suit === leadSuit);
     if (hasLead) return card.suit === leadSuit;
     return true;
@@ -317,23 +353,26 @@ export default function TrufmanApp() {
   function commitPlay(pid, card) {
     if (resolving) return;
 
-    // SFX taruh kartu, bedakan trump vs non-trump
-    const isTrumpCardNow = card.suit === trump;
-    playCardSfx(isTrumpCardNow);
+    // 🔊 SFX kartu diletakkan (trump vs non-trump)
+    const isTrumpCard = card.suit === trump;
+    playCardPlace(isTrumpCard);
 
+    // Trump broken?
     const isTrumpBrokenNow =
       (leadSuit && card.suit === trump && leadSuit !== trump) ||
       (!leadSuit && card.suit === trump);
-
     if (isTrumpBrokenNow && !trumpBroken) {
-      playSound('/sounds/trump-break.mp3');
+      playSound('/sounds/trump-break.mp3', 0.9);
       setTrumpBroken(true);
     } else if (isTrumpBrokenNow) {
       setTrumpBroken(true);
     }
 
+    // remove dari tangan
     setHands((H) => H.map((h, i) => (i === pid ? h.filter((c) => c.id !== card.id) : h)));
-    setTable((t) => [...t, { player: pid, card, hidden: isTrumpCardNow }]);
+
+    // simpan ke table (truf disembunyikan)
+    setTable((t) => [...t, { player: pid, card, hidden: isTrumpCard }]);
 
     const leadSuitNow = leadSuit || card.suit;
     if (!leadSuit) setLeadSuit(card.suit);
@@ -345,43 +384,52 @@ export default function TrufmanApp() {
         return next;
       });
     }
-
-    if (card.suit === trump) setTrumpsPlayed((n) => n + 1);
+    if (isTrumpCard) setTrumpsPlayed((n) => n + 1);
     setPlayed((pl) => [...pl, { player: pid, card }]);
+
     notifyBotsPlay(pid, card, leadSuitNow);
 
     const willLen = table.length + 1;
     if (willLen < 4) setCurrentPlayer((pid + 1) % 4);
   }
 
+  // ====== Human click ======
   function onClickCard(card) {
     if (!canPlay(0, card)) return;
     commitPlay(0, card);
   }
 
+  // ====== Bot autoplay ======
   useEffect(() => {
     if (phase !== "play" || resolving || table.length === 4 || currentPlayer === 0) {
       setBotCountdownMs(0);
       return;
     }
     const pid = currentPlayer;
+
     setBotCountdownMs(botDelayMs);
     const start = Date.now();
     const iv = setInterval(() => {
       const remain = Math.max(0, botDelayMs - (Date.now() - start));
       setBotCountdownMs(remain);
     }, 100);
+
     const timer = setTimeout(() => {
       const bot = botRefs.current[pid];
       const hand = hands[pid] || [];
       const need = (targets[pid] ?? 0) - (tricksWon[pid] ?? 0);
       const pos = table.length;
       const seen = [...played, ...table];
+
       let card = null;
       if (bot?.pickCard) {
         try {
-          card = bot.pickCard({ hand, leadSuit, trump, table, seen, voidMap, need, pos, mode, targets, tricksWon, seat: pid });
-        } catch (e) {
+          card = bot.pickCard({
+            hand, leadSuit, trump, table, seen, voidMap, need, pos,
+            mode, targets, tricksWon,
+            seat: pid
+          });
+        } catch (_) {
           card = botPlayCardFallback(hand, leadSuit, trump);
         }
       } else {
@@ -389,20 +437,28 @@ export default function TrufmanApp() {
       }
       if (card) commitPlay(pid, card);
     }, botDelayMs);
+
     return () => {
       clearTimeout(timer);
       clearInterval(iv);
     };
   }, [currentPlayer, phase, hands, leadSuit, trump, resolving, table.length, botDelayMs, targets, tricksWon, played, voidMap]);
 
+  // ====== Resolve trick ======
   useEffect(() => {
-    if (phase !== "play" || table.length !== 4 || resolvingRef.current) return;
+    if (phase !== "play") return;
+    if (table.length !== 4) return;
+    if (resolvingRef.current) return;
+
     resolvingRef.current = true;
     setResolving(true);
+
     setTable((prev) => prev.map((p) => (p.hidden ? { ...p, hidden: false } : p)));
+
     const trickPlays = [...table];
     const trickLead = leadSuit;
     const trickTrump = trump;
+
     let iv;
     if (resolveDelayMs > 0) {
       setResolveCountdownMs(resolveDelayMs);
@@ -412,17 +468,22 @@ export default function TrufmanApp() {
         setResolveCountdownMs(remain);
       }, 100);
     }
+
     const to = setTimeout(() => {
       const winner = evaluateTrick(trickPlays, trickTrump, trickLead);
-      if (winner === 0) playSound('/sounds/win-trick.mp3');
-      else playSound('/sounds/lose-trick.mp3');
+
+      if (winner === 0) playSound('/sounds/win-trick.mp3', 0.95);
+      else playSound('/sounds/lose-trick.mp3', 0.9);
 
       for (let p = 1; p <= 3; p++) {
         const bot = botRefs.current[p];
         if (bot?.observeTrick) {
-          try { bot.observeTrick({ plays: trickPlays, winner, trump: trickTrump, leadSuit: trickLead }); } catch (_) {}
+          try {
+            bot.observeTrick({ plays: trickPlays, winner, trump: trickTrump, leadSuit: trickLead });
+          } catch (_) {}
         }
       }
+
       setTable([]);
       setLeadSuit(null);
       setCurrentPlayer(winner);
@@ -435,8 +496,11 @@ export default function TrufmanApp() {
       resolvingRef.current = false;
       setResolveCountdownMs(0);
       if (iv) clearInterval(iv);
+
+      // sync learning weights ke Supabase
       syncUpAll();
     }, resolveDelayMs);
+
     return () => {
       clearTimeout(to);
       if (iv) clearInterval(iv);
@@ -445,6 +509,7 @@ export default function TrufmanApp() {
 
   const roundFinished = phase === "play" && hands.every((h) => h.length === 0);
 
+  // ====== Scoring ======
   function roundScores() {
     const s = [0, 0, 0, 0];
     for (let i = 0; i < 4; i++) {
@@ -457,12 +522,15 @@ export default function TrufmanApp() {
     return s;
   }
 
+  // ====== Next Round ======
   function nextRound() {
-    playSound('/sounds/new-round.mp3');
+    playSound('/sounds/new-round.mp3', 0.9);
     const rs = roundScores();
     setTotalScores((ts) => ts.map((v, i) => v + rs[i]));
     setDealer((d) => (d + 1) % 4);
     setRound((r) => r + 1);
+
+    // reset semua
     const deck2 = shuffle(makeDeck());
     const h2 = deal(deck2);
     setHands(h2);
@@ -481,15 +549,19 @@ export default function TrufmanApp() {
     resolvingRef.current = false;
     setResolveCountdownMs(0);
     setBotCountdownMs(0);
+
+    // reset pengetahuan ronde
     setVoidMap([{}, {}, {}, {}]);
     setTrumpsPlayed(0);
     setPlayed([]);
+
     for (let p = 1; p <= 3; p++) {
       const bot = botRefs.current[p];
       if (bot?.reset) bot.reset();
     }
   }
 
+  // ====== Reset buttons ======
   function resetBotMemory() {
     setVoidMap([{}, {}, {}, {}]);
     setTrumpsPlayed(0);
@@ -499,13 +571,12 @@ export default function TrufmanApp() {
       if (bot?.reset) bot.reset();
     }
   }
-
   function resetBotLearning() {
     for (let p = 1; p <= 3; p++) {
       const bot = botRefs.current[p];
       if (bot?.reset) bot.reset({ hard: true });
     }
-    try { localStorage.removeItem("trufman_bot_memory_v3"); } catch (_) { }
+    try { localStorage.removeItem("trufman_bot_memory_v3"); } catch (_) {}
     seatsToSync.forEach(s => cloudSave(s, { version: 3, weights: {}, games: 0, resetAt: new Date().toISOString() }));
   }
 
@@ -518,6 +589,7 @@ export default function TrufmanApp() {
   const targetOrDash = (i) => (phase === "play" && targets[i] !== undefined ? targets[i] : "–");
   const sec = (ms) => (ms / 1000).toFixed(1) + "s";
 
+  // ====== UI ======
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
@@ -565,6 +637,7 @@ export default function TrufmanApp() {
             {hands[3]?.map((_, i) => <SimpleCardBack key={i} vertical small />)}
           </div>
 
+          {/* Center table cards in seat-relative slots */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="relative w-80 h-64">
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto">
@@ -582,8 +655,13 @@ export default function TrufmanApp() {
             </div>
           </div>
 
-          <CountdownOverlay visible={resolving && resolveDelayMs > 0} ms={resolveCountdownMs} total={resolveDelayMs} />
+          <CountdownOverlay
+            visible={resolving && resolveDelayMs > 0}
+            ms={resolveCountdownMs}
+            total={resolveDelayMs}
+          />
 
+          {/* Bottom player hand */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[95%]">
             <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow">
               Kamu • {tricksWon[0]}/{targetOrDash(0)}
@@ -596,6 +674,7 @@ export default function TrufmanApp() {
           </div>
         </div>
 
+        {/* Info bar + controls */}
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
           <Badge>Fase: {phase}</Badge>
           <Badge>Giliran: P{currentPlayer + 1}</Badge>
@@ -603,11 +682,20 @@ export default function TrufmanApp() {
           <Badge>Truf: {trump ? SUITS.find((s) => s.key === trump)?.icon : "–"}</Badge>
           <Badge>Truf Broken: {trumpBroken ? "Ya" : "Belum"}</Badge>
           <Badge>Total Bet: {bidsRevealed ? `${sumBids}/13` : "—/13"} ({mode || "–"})</Badge>
+
           <div className="ml-auto flex gap-2">
-            <button onClick={resetBotMemory} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-600 text-stone-100 border border-zinc-500 hover:bg-zinc-500 transition" title="Kosongkan memori taktis bot">
+            <button
+              onClick={resetBotMemory}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-600 text-stone-100 border border-zinc-500 hover:bg-zinc-500 transition"
+              title="Kosongkan memori taktis bot"
+            >
               Reset Memory
             </button>
-            <button onClick={resetBotLearning} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-800 text-white border border-red-600 hover:bg-red-700 transition" title="Hapus data training bot (permanen!)">
+            <button
+              onClick={resetBotLearning}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-800 text-white border border-red-600 hover:bg-red-700 transition"
+              title="Hapus data training bot (permanen!)"
+            >
               Reset Learning
             </button>
           </div>
@@ -616,16 +704,25 @@ export default function TrufmanApp() {
         <div className="w-full mt-2 grid md:grid-cols-2 gap-3 text-stone-300">
           <div className="bg-zinc-800/50 rounded-xl shadow p-3 flex items-center gap-3">
             <label htmlFor="revealDelay" className="font-medium whitespace-nowrap">Reveal Delay</label>
-            <input id="revealDelay" type="range" min={400} max={2000} step={100} value={resolveDelayMs} onChange={(e) => setResolveDelayMs(Number(e.target.value))} className="flex-1 accent-red-600" />
+            <input
+              id="revealDelay" type="range" min={400} max={2000} step={100}
+              value={resolveDelayMs} onChange={(e) => setResolveDelayMs(Number(e.target.value))}
+              className="flex-1 accent-red-600"
+            />
             <span className="w-14 text-right">{sec(resolveDelayMs)}</span>
           </div>
           <div className="bg-zinc-800/50 rounded-xl shadow p-3 flex items-center gap-3">
             <label htmlFor="botDelay" className="font-medium whitespace-nowrap">Bot Delay</label>
-            <input id="botDelay" type="range" min={200} max={1200} step={100} value={botDelayMs} onChange={(e) => setBotDelayMs(Number(e.target.value))} className="flex-1 accent-red-600" />
+            <input
+              id="botDelay" type="range" min={200} max={1200} step={100}
+              value={botDelayMs} onChange={(e) => setBotDelayMs(Number(e.target.value))}
+              className="flex-1 accent-red-600"
+            />
             <span className="w-14 text-right">{sec(botDelayMs)}</span>
           </div>
         </div>
 
+        {/* Bidding panel */}
         {phase === "bidding" && (
           <div className="mx-auto w/full max-w-[1200px] mt-3 grid md:grid-cols-4 gap-3">
             {[0, 1, 2, 3].map((p) => {
@@ -639,6 +736,7 @@ export default function TrufmanApp() {
                     <div className="font-semibold">P{p + 1} {isYou ? "(Kamu)" : ""}</div>
                     <Badge>Bid: {bid ? (bidsRevealed ? `${bid.count}${suitIcon}` : "...") : "..."}</Badge>
                   </div>
+
                   {bid ? (
                     <div className="h-10 flex items-center">
                       {bidsRevealed ? <SimpleCardFace card={bidCard} disabled /> : <SimpleCardBack small />}
@@ -655,13 +753,18 @@ export default function TrufmanApp() {
               );
             })}
             <div className="md:col-span-4 flex justify-end">
-              <button className="px-4 py-2 rounded-xl text-white font-bold transition disabled:bg-zinc-600 bg-red-700 hover:bg-red-600" onClick={startPlay} disabled={!allBidsIn}>
+              <button
+                className="px-4 py-2 rounded-xl text-white font-bold transition disabled:bg-zinc-600 bg-red-700 hover:bg-red-600"
+                onClick={startPlay}
+                disabled={!allBidsIn}
+              >
                 Mulai Main
               </button>
             </div>
           </div>
         )}
 
+        {/* Scores + Leaderboard */}
         <div className="mt-4 grid md:grid-cols-2 gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[0, 1, 2, 3].map((p) => (
@@ -671,9 +774,14 @@ export default function TrufmanApp() {
                   <Badge>Total: {totalScores[p]}</Badge>
                 </div>
                 <div className="mt-1 text-sm text-stone-300 grid grid-cols-2 gap-1">
-                  <div>Bid</div><div className="text-right">{bids[p] ? (bidsRevealed ? `${bids[p].count}${SUITS.find((s) => s.key === bids[p].suit)?.icon}` : "...") : "–"}</div>
-                  <div>Target</div><div className="text-right">{targets[p] ?? "–"}</div>
-                  <div>Trik</div><div className="text-right">{tricksWon[p] ?? 0}</div>
+                  <div>Bid</div>
+                  <div className="text-right">
+                    {bids[p] ? (bidsRevealed ? `${bids[p].count}${SUITS.find((s) => s.key === bids[p].suit)?.icon}` : "...") : "–"}
+                  </div>
+                  <div>Target</div>
+                  <div className="text-right">{targets[p] ?? "–"}</div>
+                  <div>Trik</div>
+                  <div className="text-right">{tricksWon[p] ?? 0}</div>
                 </div>
               </div>
             ))}
@@ -694,10 +802,34 @@ export default function TrufmanApp() {
           </div>
         </div>
 
-        {roundFinished && <RoundSummary mode={mode} trump={trump} bids={bids} targets={targets} tricksWon={tricksWon} onNext={nextRound} />}
+        {roundFinished && (
+          <RoundSummary
+            mode={mode}
+            trump={trump}
+            bids={bids}
+            targets={targets}
+            tricksWon={tricksWon}
+            onNext={nextRound}
+          />
+        )}
       </div>
-      <FloatingBotTimer visible={phase === "play" && currentPlayer !== 0 && !resolving && table.length < 4 && botDelayMs > 0} ms={botCountdownMs} player={currentPlayer} />
-      {showHowTo && <HowToPlayModal onClose={() => setShowHowTo(false)} SUITS={SUITS} rankLabel={rankLabel} betFromRank={betFromRank} />}
+
+      {/* Bot timer floating card */}
+      <FloatingBotTimer
+        visible={phase==="play" && currentPlayer!==0 && !resolving && table.length<4 && botDelayMs > 0}
+        ms={botCountdownMs}
+        player={currentPlayer}
+      />
+
+      {/* How To */}
+      {showHowTo && (
+        <HowToPlayModal
+          onClose={() => setShowHowTo(false)}
+          SUITS={SUITS}
+          rankLabel={rankLabel}
+          betFromRank={betFromRank}
+        />
+      )}
     </div>
   );
 }
@@ -709,7 +841,7 @@ export default function TrufmanApp() {
 function Badge({ children }) {
   return <span className="inline-flex items-center rounded-md bg-zinc-700 text-stone-200 px-2 py-0.5 text-xs shadow-sm">{children}</span>;
 }
-function CardBack({ small }) {
+function CardBack({ small, vertical }) {
   const cls = small ? "card-back card-small" : "card-back";
   return <div className={`card-base ${small ? 'card-small' : ''} animate-deal`}><div className={cls}></div></div>;
 }
@@ -717,7 +849,12 @@ function CardFace({ card, onClick, disabled }) {
   const red = card.suit === "H" || card.suit === "D";
   const colorCls = red ? "is-red" : "is-black";
   return (
-    <button onClick={onClick} disabled={disabled} title={card.label} className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={card.label}
+      className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}
+    >
       <div className={`card-face ${colorCls}`}>
         <div className="card-label">{card.label}</div>
         <div className="card-label-rt">{card.label}</div>
@@ -733,7 +870,12 @@ function SimpleCardBack({ small, vertical }) {
 function SimpleCardFace({ card, onClick, disabled }) {
   const red = card.suit === "H" || card.suit === "D";
   return (
-    <button onClick={onClick} disabled={disabled} className={`px-2 py-1 rounded-lg border bg-white font-mono text-sm shadow ${disabled ? "opacity-100 cursor-not-allowed" : "hover:ring-2 hover:ring-red-400"}`} title={card.label}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-2 py-1 rounded-lg border bg-white font-mono text-sm shadow ${disabled ? "opacity-100 cursor-not-allowed" : "hover:ring-2 hover:ring-red-400"}`}
+      title={card.label}
+    >
       <span className={red ? "text-rose-600" : "text-slate-800"}>{card.label}</span>
     </button>
   );
@@ -749,20 +891,44 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
   const [suit, setSuit] = useState("S");
   const ranks = handBySuit[suit] || [];
   const [rank, setRank] = useState(ranks[0] || 2);
+
   useEffect(() => {
     const r = handBySuit[suit] || [];
     if (!r.includes(rank)) setRank(r[0] || 2);
   }, [suit, handBySuit]);
+
   const canSubmit = !disabled && ranks.length > 0;
+
   return (
     <div className="flex items-center gap-2 text-sm">
-      <select id="bid-suit" className="rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50" value={suit} onChange={(e) => setSuit(e.target.value)} disabled={disabled}>
+      <select
+        id="bid-suit"
+        className="rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+        value={suit}
+        onChange={(e) => setSuit(e.target.value)}
+        disabled={disabled}
+      >
         {SUITS.map((s) => <option key={s.key} value={s.key}>{s.icon}</option>)}
       </select>
-      <select id="bid-rank" className="flex-1 rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50" value={rank} onChange={(e) => setRank(Number(e.target.value))} disabled={disabled || ranks.length === 0}>
-        {ranks.length === 0 ? <option>–</option> : ranks.map((r) => <option key={r} value={r}>{rankLabel(r)} ({betFromRank(r)})</option>)}
+
+      <select
+        id="bid-rank"
+        className="flex-1 rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+        value={rank}
+        onChange={(e) => setRank(Number(e.target.value))}
+        disabled={disabled || ranks.length === 0}
+      >
+        {ranks.length === 0 ? <option>–</option> : ranks.map((r) => (
+          <option key={r} value={r}>{rankLabel(r)} ({betFromRank(r)})</option>
+        ))}
       </select>
-      <button type="button" className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed" disabled={!canSubmit} onClick={() => setBid(suit, rank)}>
+
+      <button
+        type="button"
+        className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed"
+        disabled={!canSubmit}
+        onClick={() => setBid(suit, rank)}
+      >
         Bet
       </button>
     </div>
@@ -780,6 +946,7 @@ function RoundSummary({ mode, trump, bids, targets, tricksWon, onNext }) {
     }
     return s;
   }, [mode, targets, tricksWon]);
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-zinc-800 rounded-2xl shadow-xl w-full max-w-2xl p-4 border border-zinc-700">
@@ -815,7 +982,10 @@ function CountdownOverlay({ visible, ms, total }) {
   const deg = (1 - pct) * 360;
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/20">
-      <div className="relative w-32 h-32 rounded-full" style={{ background: `conic-gradient(rgba(220,38,38,0.95) ${deg}deg, rgba(255,255,255,0.1) 0deg)` }}>
+      <div
+        className="relative w-32 h-32 rounded-full"
+        style={{ background: `conic-gradient(rgba(220,38,38,0.95) ${deg}deg, rgba(255,255,255,0.1) 0deg)` }}
+      >
         <div className="absolute inset-2 rounded-full bg-zinc-900/80 backdrop-blur-sm border border-red-500/40 flex items-center justify-center">
           <span className="text-red-300 text-3xl font-bold tabular-nums drop-shadow">
             {(ms / 1000).toFixed(1)}s
@@ -840,23 +1010,100 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const ranks = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+
+  const ranks = [2,3,4,5,6,7,8,9,10,11,12,13,14];
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-3xl bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="px-5 py-4 bg-red-900 text-white flex items-center justify-between">
           <h3 className="text-lg font-bold">How To Play — Trufman</h3>
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25" title="Tutup">✕</button>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25"
+            title="Tutup"
+          >
+            ✕
+          </button>
         </div>
+
         <div className="p-5 space-y-4 text-sm text-stone-300 max-h-[80vh] overflow-y-auto">
-          <section><h4 className="font-semibold text-stone-100">Tujuan</h4><p>Setiap pemain menentukan bid lalu mencoba mencapai <em>target</em> triknya setelah mode ditentukan (ATAS/BAWAH).</p></section>
-          <section><h4 className="font-semibold text-stone-100">Bidding</h4><ul className="list-disc ml-5 space-y-1"><li>Pilih satu kartu dari tanganmu sebagai bid. Nilai bid: 2–10 = nilainya; J/Q/K = 0; A = 1.</li><li>Truf adalah suit dari bid tertinggi (seri angka dipecahkan oleh urutan suit: C &lt; D &lt; H &lt; S).</li><li>Semua bid ditutup dulu. Setelah semua memilih, bid dibuka serentak.</li></ul></section>
-          <section><h4 className="font-semibold text-stone-100">Mode & Target</h4><ul className="list-disc ml-5 space-y-1"><li>Hitung total bid 4 pemain:<ul className="list-disc ml-6 mt-1"><li><b>&gt; 13</b> atau <b>= 13</b> → <b>ATAS</b>, target = bid + 1</li><li><b>&lt; 13</b> → <b>BAWAH</b>, target = bid − 1 (min 0)</li></ul></li></ul></section>
-          <section><h4 className="font-semibold text-stone-100">Main Trick</h4><ul className="list-disc ml-5 space-y-1"><li>Ikuti suit lead jika bisa. Jika tidak bisa, bebas buang (termasuk truf).</li><li>Tidak boleh <em>lead truf</em> sebelum <b>Truf Broken</b>, kecuali kartu di tanganmu tinggal truf semua.</li><li><b>Truf Broken</b> terjadi ketika ada yang tidak bisa ikut lead lalu buang truf, atau saat ada yang lead truf (legal).</li><li>Kartu truf yang dimainkan ditutup dulu di meja, akan terbuka serentak saat 4 kartu lengkap.</li></ul></section>
-          <section><h4 className="font-semibold text-stone-100">Penentuan Pemenang Trick</h4><ul className="list-disc ml-5 space-y-1"><li>Jika ada truf: truf tertinggi menang.</li><li>Jika tidak ada truf: kartu tertinggi pada suit lead menang.</li></ul></section>
-          <section><h4 className="font-semibold text-stone-100">Skoring</h4><ul className="list-disc ml-5 space-y-1"><li>Tepat target: +target.</li><li>Kurang target: <b>ATAS</b> = −2×selisih, <b>BAWAH</b> = −1×selisih.</li><li>Lebih target: <b>BAWAH</b> = −2×selisih, <b>ATAS</b> = −1×selisih.</li></ul></section>
+          <section>
+            <h4 className="font-semibold text-stone-100">Tujuan</h4>
+            <p>Setiap pemain menentukan bid lalu mencoba mencapai <em>target</em> triknya setelah mode ditentukan (ATAS/BAWAH).</p>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-stone-100">Bidding</h4>
+            <ul className="list-disc ml-5 space-y-1">
+              <li>Pilih satu kartu dari tanganmu sebagai bid. Nilai bid: 2–10 = nilainya; J/Q/K = 0; A = 1.</li>
+              <li>Truf adalah suit dari bid tertinggi (seri angka dipecahkan oleh urutan suit: C &lt; D &lt; H &lt; S).</li>
+              <li>Semua bid ditutup dulu. Setelah semua memilih, bid dibuka serentak.</li>
+            </ul>
+            <div className="mt-2 rounded-lg border border-zinc-700 p-3 bg-zinc-900/40">
+              <div className="font-medium mb-1 text-stone-200">Mapping Nilai Bid</div>
+              <div className="grid grid-cols-7 gap-1 text-xs">
+                {ranks.map((r) => (
+                  <div key={r} className="rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-center">
+                    {rankLabel(r)} → {betFromRank(r)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-stone-100">Mode & Target</h4>
+            <ul className="list-disc ml-5 space-y-1">
+              <li>Hitung total bid 4 pemain:
+                <ul className="list-disc ml-6 mt-1">
+                  <li><b>&gt; 13</b> atau <b>= 13</b> → <b>ATAS</b>, target = bid + 1</li>
+                  <li><b>&lt; 13</b> → <b>BAWAH</b>, target = bid − 1 (min 0)</li>
+                </ul>
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-stone-100">Main Trick</h4>
+            <ul className="list-disc ml-5 space-y-1">
+              <li>Ikuti suit lead jika bisa. Jika tidak bisa, bebas buang (termasuk truf).</li>
+              <li>Tidak boleh <em>lead truf</em> sebelum <b>Truf Broken</b>, kecuali kartu di tanganmu tinggal truf semua.</li>
+              <li><b>Truf Broken</b> terjadi ketika ada yang tidak bisa ikut lead lalu buang truf, atau saat ada yang lead truf (legal).</li>
+              <li>Kartu truf yang dimainkan ditutup dulu di meja, akan terbuka serentak saat 4 kartu lengkap.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-stone-100">Penentuan Pemenang Trick</h4>
+            <ul className="list-disc ml-5 space-y-1">
+              <li>Jika ada truf: truf tertinggi menang.</li>
+              <li>Jika tidak ada truf: kartu tertinggi pada suit lead menang.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-stone-100">Skoring</h4>
+            <ul className="list-disc ml-5 space-y-1">
+              <li>Tepat target: +target.</li>
+              <li>Kurang target: <b>ATAS</b> = −2×selisih, <b>BAWAH</b> = −1×selisih.</li>
+              <li>Lebih target: <b>BAWAH</b> = −2×selisih, <b>ATAS</b> = −1×selisih.</li>
+            </ul>
+          </section>
+
           <div className="pt-2 flex justify-end">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold">Paham Bung</button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold"
+            >
+              Paham Bung
+            </button>
           </div>
         </div>
       </div>
