@@ -91,7 +91,7 @@ function botPlayCardFallback(hand, leadSuit, trump) {
   return hand.slice().sort(asc)[0];
 }
 
-const SeatName = ["Kamu", "Albert", "Harriet", "Cleopatra"];
+const SeatName = ["Kamu", "Renjana", "Harriet", "Cleopatra"];
 
 export default function TrufmanApp() {
   const [round, setRound] = useState(1);
@@ -537,25 +537,25 @@ export default function TrufmanApp() {
 
           {/* ======================= BAGIAN YANG DIUBAH ======================= */}
           {/* Layout kartu di tengah meja, disesuaikan dengan posisi pemain */}
-          <div className="absolute inset-0">
-            <div className="relative w-full h-full">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="relative w-80 h-64">
               {/* Player 0 (Kamu, P1) - Bawah */}
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 0)} />
               </div>
               
               {/* Player 1 (Bot, P2) - Kiri */}
-              <div className="absolute left-20 top-1/2 -translate-y-1/2">
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 1)} />
               </div>
               
               {/* Player 2 (Bot, P3) - Atas */}
-              <div className="absolute top-20 left-1/2 -translate-x-1/2">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 2)} />
               </div>
               
               {/* Player 3 (Bot, P4) - Kanan */}
-              <div className="absolute right-20 top-1/2 -translate-y-1/2">
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 3)} />
               </div>
             </div>
@@ -683,7 +683,10 @@ export default function TrufmanApp() {
   );
 }
 
-// ... Sisa komponen (Badge, CardFace, TableSlot, dll) tetap sama ...
+// ============================================
+// UI Components
+// ============================================
+
 function Badge({ children }) {
   return <span className="inline-flex items-center rounded-md bg-zinc-700 text-stone-200 px-2 py-0.5 text-xs shadow-sm">{children}</span>;
 }
