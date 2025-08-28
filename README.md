@@ -33,14 +33,16 @@ npm install
 
 ### Buat file .env (Vite)
 VITE_SUPABASE_URL=https://<your-project>.supabase.co
+
 VITE_SUPABASE_ANON_KEY=<your-anon-key>
+
 
 ### Jalankan dev server
 npm run dev
 
 ### Build
 npm run build
-
+```
 
 ## 🚀 Deploy
 - GitHub Pages dengan workflow standar atau folder /docs.
