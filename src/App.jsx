@@ -133,7 +133,7 @@ export default function TrufmanApp() {
   // Setup Music on component mount
   useEffect(() => {
     if (!audioRef.current) {
-        audioRef.current = new Audio('../public/sounds/background-music.mp3'); // Ganti dengan path file musik Anda
+        audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3'); // Ganti dengan path file musik Anda
         audioRef.current.loop = true;
         audioRef.current.volume = 0.3;
     }
