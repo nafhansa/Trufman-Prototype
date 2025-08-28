@@ -2,17 +2,17 @@ import { cloudLoad, cloudSave, debounce } from './lib/cloudMemory.js'
 import { createLearningBot } from "./bots/learningBot.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// Helper function untuk memutar suara
 function playSound(src) {
   try {
     const sound = new Audio(src);
-    sound.play().catch(error => {
-      console.error("Gagal memutar suara:", error);
-    });
-  } catch (error) {
-    console.error("Gagal membuat objek Audio:", error);
-  }
+    sound.play().catch(() => {});
+  } catch (_) {}
 }
+
+const SFX_URLS = {
+  normal: "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-normal.wav",
+  trump:  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-trump.wav",
+};
 
 const SUITS = [
   { key: "C", label: "Clover", icon: "♣" },
@@ -126,26 +126,51 @@ export default function TrufmanApp() {
   const [cloudReady, setCloudReady] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
 
-  // State & Ref for Background Music
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const audioRef = useRef(null);
 
-  // Setup Music on component mount
+  // SFX pools
+  const sfxPools = useRef({ normal: [], trump: [] });
+  const sfxIndex = useRef({ normal: 0, trump: 0 });
+
   useEffect(() => {
     if (!audioRef.current) {
-        audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3');
-        audioRef.current.loop = true;
-        audioRef.current.volume = 0.3;
+      audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3');
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.2;
     }
   }, []);
 
-  // Function to toggle music
+  useEffect(() => {
+    const buildPool = (url, count = 8, vol = 1.0) =>
+      Array.from({ length: count }, () => {
+        const a = new Audio(url);
+        a.preload = 'auto';
+        a.crossOrigin = 'anonymous';
+        a.volume = vol;
+        return a;
+      });
+    sfxPools.current.normal = buildPool(SFX_URLS.normal, 8, 1.0);
+    sfxPools.current.trump  = buildPool(SFX_URLS.trump,  8, 1.0);
+  }, []);
+
+  function playCardSfx(isTrump) {
+    const key = isTrump ? 'trump' : 'normal';
+    const pool = sfxPools.current[key];
+    if (!pool?.length) return;
+    const i = sfxIndex.current[key] % pool.length;
+    sfxIndex.current[key] = i + 1;
+    const a = pool[i];
+    try {
+      a.currentTime = 0;
+      a.playbackRate = 0.96 + Math.random() * 0.08;
+      a.play().catch(() => {});
+    } catch (_) {}
+  }
+
   function toggleMusic() {
-    if (isMusicPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
+    if (isMusicPlaying) audioRef.current.pause();
+    else audioRef.current.play().catch(() => {});
     setIsMusicPlaying(!isMusicPlaying);
   }
 
@@ -291,21 +316,28 @@ export default function TrufmanApp() {
 
   function commitPlay(pid, card) {
     if (resolving) return;
-    playSound('/sounds/play-card.mp3');
 
-    const isTrumpBrokenNow = (leadSuit && card.suit === trump && leadSuit !== trump) || (!leadSuit && card.suit === trump);
+    // SFX taruh kartu, bedakan trump vs non-trump
+    const isTrumpCardNow = card.suit === trump;
+    playCardSfx(isTrumpCardNow);
+
+    const isTrumpBrokenNow =
+      (leadSuit && card.suit === trump && leadSuit !== trump) ||
+      (!leadSuit && card.suit === trump);
+
     if (isTrumpBrokenNow && !trumpBroken) {
-        playSound('/sounds/trump-break.mp3');
-        setTrumpBroken(true);
+      playSound('/sounds/trump-break.mp3');
+      setTrumpBroken(true);
     } else if (isTrumpBrokenNow) {
-        setTrumpBroken(true);
+      setTrumpBroken(true);
     }
 
     setHands((H) => H.map((h, i) => (i === pid ? h.filter((c) => c.id !== card.id) : h)));
-    const isTrumpCard = card.suit === trump;
-    setTable((t) => [...t, { player: pid, card, hidden: isTrumpCard }]);
+    setTable((t) => [...t, { player: pid, card, hidden: isTrumpCardNow }]);
+
     const leadSuitNow = leadSuit || card.suit;
     if (!leadSuit) setLeadSuit(card.suit);
+
     if (leadSuit && card.suit !== leadSuit) {
       setVoidMap((vm) => {
         const next = vm.map((m) => ({ ...m }));
@@ -313,9 +345,11 @@ export default function TrufmanApp() {
         return next;
       });
     }
+
     if (card.suit === trump) setTrumpsPlayed((n) => n + 1);
     setPlayed((pl) => [...pl, { player: pid, card }]);
     notifyBotsPlay(pid, card, leadSuitNow);
+
     const willLen = table.length + 1;
     if (willLen < 4) setCurrentPlayer((pid + 1) % 4);
   }
@@ -380,17 +414,13 @@ export default function TrufmanApp() {
     }
     const to = setTimeout(() => {
       const winner = evaluateTrick(trickPlays, trickTrump, trickLead);
-      if (winner === 0) {
-        playSound('/sounds/win-trick.mp3');
-      } else {
-        playSound('/sounds/lose-trick.mp3');
-      }
+      if (winner === 0) playSound('/sounds/win-trick.mp3');
+      else playSound('/sounds/lose-trick.mp3');
+
       for (let p = 1; p <= 3; p++) {
         const bot = botRefs.current[p];
         if (bot?.observeTrick) {
-          try {
-            bot.observeTrick({ plays: trickPlays, winner, trump: trickTrump, leadSuit: trickLead });
-          } catch (_) { }
+          try { bot.observeTrick({ plays: trickPlays, winner, trump: trickTrump, leadSuit: trickLead }); } catch (_) {}
         }
       }
       setTable([]);
@@ -535,33 +565,22 @@ export default function TrufmanApp() {
             {hands[3]?.map((_, i) => <SimpleCardBack key={i} vertical small />)}
           </div>
 
-          {/* ======================= BAGIAN YANG DIUBAH ======================= */}
-          {/* Layout kartu di tengah meja, disesuaikan dengan posisi pemain */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="relative w-80 h-64">
-              {/* Player 0 (Kamu, P1) - Bawah */}
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 0)} />
               </div>
-              
-              {/* Player 1 (Bot, P2) - Kiri */}
               <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 1)} />
               </div>
-              
-              {/* Player 2 (Bot, P3) - Atas */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 2)} />
               </div>
-              
-              {/* Player 3 (Bot, P4) - Kanan */}
               <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-auto">
                 <TableSlot play={table.find((t) => t.player === 3)} />
               </div>
             </div>
           </div>
-          {/* ===================== AKHIR BAGIAN YANG DIUBAH ===================== */}
-
 
           <CountdownOverlay visible={resolving && resolveDelayMs > 0} ms={resolveCountdownMs} total={resolveDelayMs} />
 
@@ -690,34 +709,34 @@ export default function TrufmanApp() {
 function Badge({ children }) {
   return <span className="inline-flex items-center rounded-md bg-zinc-700 text-stone-200 px-2 py-0.5 text-xs shadow-sm">{children}</span>;
 }
-function CardBack({ small, vertical }) {
-    const cls = small ? "card-back card-small" : "card-back";
-    return <div className={`card-base ${small ? 'card-small' : ''} animate-deal`}><div className={cls}></div></div>;
+function CardBack({ small }) {
+  const cls = small ? "card-back card-small" : "card-back";
+  return <div className={`card-base ${small ? 'card-small' : ''} animate-deal`}><div className={cls}></div></div>;
 }
 function CardFace({ card, onClick, disabled }) {
-    const red = card.suit === "H" || card.suit === "D";
-    const colorCls = red ? "is-red" : "is-black";
-    return (
-      <button onClick={onClick} disabled={disabled} title={card.label} className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}>
-        <div className={`card-face ${colorCls}`}>
-          <div className="card-label">{card.label}</div>
-          <div className="card-label-rt">{card.label}</div>
-          <div className="card-center-pip">{card.suitIcon}</div>
-        </div>
-      </button>
-    );
+  const red = card.suit === "H" || card.suit === "D";
+  const colorCls = red ? "is-red" : "is-black";
+  return (
+    <button onClick={onClick} disabled={disabled} title={card.label} className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}>
+      <div className={`card-face ${colorCls}`}>
+        <div className="card-label">{card.label}</div>
+        <div className="card-label-rt">{card.label}</div>
+        <div className="card-center-pip">{card.suitIcon}</div>
+      </div>
+    </button>
+  );
 }
 function SimpleCardBack({ small, vertical }) {
-    const cls = `bg-red-600 rounded-lg border-2 border-red-300 shadow ${small ? (vertical ? "h-6 w-4" : "h-6 w-4") : "h-10 w-7"}`;
-    return <div className={cls} />;
+  const cls = `bg-red-600 rounded-lg border-2 border-red-300 shadow ${small ? (vertical ? "h-6 w-4" : "h-6 w-4") : "h-10 w-7"}`;
+  return <div className={cls} />;
 }
 function SimpleCardFace({ card, onClick, disabled }) {
-    const red = card.suit === "H" || card.suit === "D";
-    return (
-      <button onClick={onClick} disabled={disabled} className={`px-2 py-1 rounded-lg border bg-white font-mono text-sm shadow ${disabled ? "opacity-100 cursor-not-allowed" : "hover:ring-2 hover:ring-red-400"}`} title={card.label}>
-        <span className={red ? "text-rose-600" : "text-slate-800"}>{card.label}</span>
-      </button>
-    );
+  const red = card.suit === "H" || card.suit === "D";
+  return (
+    <button onClick={onClick} disabled={disabled} className={`px-2 py-1 rounded-lg border bg-white font-mono text-sm shadow ${disabled ? "opacity-100 cursor-not-allowed" : "hover:ring-2 hover:ring-red-400"}`} title={card.label}>
+      <span className={red ? "text-rose-600" : "text-slate-800"}>{card.label}</span>
+    </button>
+  );
 }
 function TableSlot({ play }) {
   return (
@@ -744,7 +763,7 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
         {ranks.length === 0 ? <option>–</option> : ranks.map((r) => <option key={r} value={r}>{rankLabel(r)} ({betFromRank(r)})</option>)}
       </select>
       <button type="button" className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed" disabled={!canSubmit} onClick={() => setBid(suit, rank)}>
-        Set
+        Bet
       </button>
     </div>
   );
@@ -837,7 +856,7 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
           <section><h4 className="font-semibold text-stone-100">Penentuan Pemenang Trick</h4><ul className="list-disc ml-5 space-y-1"><li>Jika ada truf: truf tertinggi menang.</li><li>Jika tidak ada truf: kartu tertinggi pada suit lead menang.</li></ul></section>
           <section><h4 className="font-semibold text-stone-100">Skoring</h4><ul className="list-disc ml-5 space-y-1"><li>Tepat target: +target.</li><li>Kurang target: <b>ATAS</b> = −2×selisih, <b>BAWAH</b> = −1×selisih.</li><li>Lebih target: <b>BAWAH</b> = −2×selisih, <b>ATAS</b> = −1×selisih.</li></ul></section>
           <div className="pt-2 flex justify-end">
-            <button onClick={onClose} className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold">Mengerti</button>
+            <button onClick={onClose} className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold">Paham Bung</button>
           </div>
         </div>
       </div>
