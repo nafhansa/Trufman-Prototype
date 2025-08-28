@@ -27,8 +27,6 @@ body {
 }
 
 /* === Card styling & animations === */
-/* These styles are kept as they are because they provide good contrast */
-/* and the red card back already fits the new theme perfectly. */
 @layer utilities {
   .card-base {
     @apply relative rounded-xl border bg-white overflow-hidden;

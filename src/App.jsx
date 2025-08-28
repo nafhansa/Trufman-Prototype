@@ -7,8 +7,7 @@ function playSound(src) {
   try {
     const sound = new Audio(src);
     sound.play().catch(error => {
-        // Autoplay bisa diblokir oleh browser, ini untuk menangani error-nya
-        console.error("Gagal memutar suara:", error);
+      console.error("Gagal memutar suara:", error);
     });
   } catch (error) {
     console.error("Gagal membuat objek Audio:", error);
@@ -125,6 +124,30 @@ export default function TrufmanApp() {
   const MEMKEY = 'trufman_bot_memory_v3';
   const seatsToSync = [1, 2, 3];
   const [cloudReady, setCloudReady] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);
+
+  // State & Ref for Background Music
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const audioRef = useRef(null);
+
+  // Setup Music on component mount
+  useEffect(() => {
+    if (!audioRef.current) {
+        audioRef.current = new Audio('../public/sounds/background-music.mp3'); // Ganti dengan path file musik Anda
+        audioRef.current.loop = true;
+        audioRef.current.volume = 0.3;
+    }
+  }, []);
+
+  // Function to toggle music
+  function toggleMusic() {
+    if (isMusicPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsMusicPlaying(!isMusicPlaying);
+  }
 
   async function syncDownAll() {
     for (const s of seatsToSync) {
@@ -464,7 +487,6 @@ export default function TrufmanApp() {
 
   const targetOrDash = (i) => (phase === "play" && targets[i] !== undefined ? targets[i] : "–");
   const sec = (ms) => (ms / 1000).toFixed(1) + "s";
-  const [showHowTo, setShowHowTo] = useState(false);
 
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
@@ -474,6 +496,13 @@ export default function TrufmanApp() {
             Trufman
           </h1>
           <div className="flex items-center gap-3">
+            <button
+              onClick={toggleMusic}
+              className="px-3 py-1.5 rounded-lg text-lg bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
+              title={isMusicPlaying ? "Matikan musik" : "Nyalakan musik"}
+            >
+              {isMusicPlaying ? '🔇' : '🔊'}
+            </button>
             <div className="text-stone-300 text-sm">Dealer: P{dealer + 1} • Ronde: {round}</div>
             <button
               onClick={() => setShowHowTo(true)}
