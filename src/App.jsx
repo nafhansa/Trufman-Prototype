@@ -721,7 +721,7 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
         {ranks.length === 0 ? <option>–</option> : ranks.map((r) => <option key={r} value={r}>{rankLabel(r)} ({betFromRank(r)})</option>)}
       </select>
       <button type="button" className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed" disabled={!canSubmit} onClick={() => setBid(suit, rank)}>
-        Set
+        Bet
       </button>
     </div>
   );
