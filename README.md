@@ -25,6 +25,7 @@ Bot menyimpan weights (JSON) di Supabase per client_id + seat. Setelah tiap tric
 
 
 ## HOW TO RUN IT??
+```bash
 git clone https://github.com/nafhansa/Trufman-Prototype.git
 cd Trufman-Prototype
 npm install
