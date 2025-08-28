@@ -1,3 +1,4 @@
+import { cloudLoad, cloudSave, debounce } from './lib/cloudMemory.js'
 import { createLearningBot } from "./bots/learningBot.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -136,6 +137,40 @@ export default function TrufmanApp() {
   const [played, setPlayed] = useState([]);                  
   const botRefs = useRef([]);                            
 
+  // ===== Cloud memory sync (Supabase) =====
+  const MEMKEY = 'trufman_bot_memory_v3';
+  const seatsToSync = [1,2,3];
+  const [cloudReady, setCloudReady] = useState(false);
+
+  async function syncDownAll() {
+    for (const s of seatsToSync) {
+      const payload = await cloudLoad(s);
+      if (payload) {
+        try { localStorage.setItem(`${MEMKEY}:seat:${s}`, JSON.stringify(payload)); }
+        catch(_) {}
+      }
+    }
+  }
+  const syncUpAll = debounce(async () => {
+    for (const s of seatsToSync) {
+      const raw = localStorage.getItem(`${MEMKEY}:seat:${s}`);
+      if (raw) {
+        try { await cloudSave(s, JSON.parse(raw)); } catch(_) {}
+      }
+    }
+  }, 1000);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (phase !== 'bidding') return;
+      setCloudReady(false);
+      await syncDownAll();
+      if (alive) setCloudReady(true);
+    })();
+    return () => { alive = false; };
+  }, [phase]);
+
   // ===== Derived =====
   const allBidsIn = bids.every(Boolean);
   const sumBids = bids.reduce((a, b) => a + (b?.count || 0), 0);
@@ -168,14 +203,12 @@ export default function TrufmanApp() {
 
   // ====== Instansiasi / reuse bot saat bidding dimulai ======
   useEffect(() => {
-    if (phase !== "bidding") return;
-  
+    if (phase !== "bidding" || !cloudReady) return;
     const arr = botRefs.current.slice();
     for (let p = 1; p <= 3; p++) {
       if (!arr[p]) {
         arr[p] = createLearningBot({
           seat: p,
-        
           getState: () => ({
             trump, leadSuit, mode,
             bids, targets, tricksWon,
@@ -183,19 +216,18 @@ export default function TrufmanApp() {
             table, currentPlayer, round,
             SUITS, suitOrder
           }),
-        
-          memoryKey: "trufman_bot_memory_v1"
+          memoryKey: "trufman_bot_memory_v3"
         });
       } else if (typeof arr[p].setSeat === "function") {
         arr[p].setSeat(p);
       }
     }
     botRefs.current = arr;
-  }, [phase, round]); 
+  }, [phase, round, cloudReady, trump, leadSuit, mode, bids, targets, tricksWon, voidMap, trumpsPlayed, played, table, currentPlayer]);
 
   // ====== Bots pilih bid (pakai learningBot → fallback) ======
   useEffect(() => {
-    if (phase !== "bidding") return;
+    if (phase !== "bidding" || !cloudReady) return;
     const nb = [...bids];
     let changed = false;
     for (let p = 1; p <= 3; p++) {
@@ -209,7 +241,7 @@ export default function TrufmanApp() {
       }
     }
     if (changed) setBids(nb);
-  }, [phase, hands, bids]);
+  }, [phase, hands, bids, cloudReady]);
 
   // ====== Reveal bids serentak ======
   useEffect(() => {
@@ -224,7 +256,6 @@ export default function TrufmanApp() {
     setTrump(trumpKey);
     const below = sumBids < 13;
     setMode(below ? "BAWAH" : "ATAS");
-    // Versi kamu:
     const tgt = bids.map((b) => (below ? Math.max(0, b.count - 1) : b.count + 1));
     setTargets(tgt);
 
@@ -235,12 +266,10 @@ export default function TrufmanApp() {
     setTricksWon([0, 0, 0, 0]);
     setTrumpBroken(false);
 
-    // reset pengetahuan ronde
     setVoidMap([{},{},{},{}]);
     setTrumpsPlayed(0);
     setPlayed([]);
 
-    // reset resolver state
     setResolving(false);
     resolvingRef.current = false;
     setResolveCountdownMs(0);
@@ -276,10 +305,8 @@ export default function TrufmanApp() {
   function commitPlay(pid, card) {
     if (resolving) return;
 
-    // remove dari tangan
     setHands((H) => H.map((h, i) => (i === pid ? h.filter((c) => c.id !== card.id) : h)));
 
-    // simpan ke table (truf disembunyikan)
     const isTrumpCard = card.suit === trump;
     setTable((t) => [...t, { player: pid, card, hidden: isTrumpCard }]);
 
@@ -302,7 +329,6 @@ export default function TrufmanApp() {
 
     notifyBotsPlay(pid, card, leadSuitNow);
 
-  
     const willLen = table.length + 1;
     if (willLen < 4) setCurrentPlayer((pid + 1) % 4);
   }
@@ -344,7 +370,6 @@ export default function TrufmanApp() {
             seat: pid
           });
         } catch (e) {
-    
           card = botPlayCardFallback(hand, leadSuit, trump);
         }
       } else {
@@ -370,7 +395,6 @@ export default function TrufmanApp() {
 
     setTable((prev) => prev.map((p) => (p.hidden ? { ...p, hidden: false } : p)));
 
-    
     const trickPlays = [...table];
     const trickLead = leadSuit;
     const trickTrump = trump;
@@ -387,7 +411,6 @@ export default function TrufmanApp() {
 
     const to = setTimeout(() => {
       const winner = evaluateTrick(trickPlays, trickTrump, trickLead);
-
 
       for (let p = 1; p <= 3; p++) {
         const bot = botRefs.current[p];
@@ -410,6 +433,9 @@ export default function TrufmanApp() {
       resolvingRef.current = false;
       setResolveCountdownMs(0);
       if (iv) clearInterval(iv);
+
+      // Upload memori bot ke Supabase (debounced)
+      syncUpAll();
     }, resolveDelayMs);
 
     return () => {
@@ -440,7 +466,6 @@ export default function TrufmanApp() {
     setDealer((d) => (d + 1) % 4);
     setRound((r) => r + 1);
 
-    // reset semua
     const deck2 = shuffle(makeDeck());
     const h2 = deal(deck2);
     setHands(h2);
@@ -460,11 +485,9 @@ export default function TrufmanApp() {
     setResolveCountdownMs(0);
     setBotCountdownMs(0);
 
-    // reset pengetahuan ronde
     setVoidMap([{},{},{},{}]);
     setTrumpsPlayed(0);
     setPlayed([]);
-
 
     for (let p = 1; p <= 3; p++) {
       const bot = botRefs.current[p];
@@ -487,7 +510,9 @@ export default function TrufmanApp() {
       const bot = botRefs.current[p];
       if (bot?.reset) bot.reset({ hard: true }); 
     }
-    try { localStorage.removeItem("trufman_bot_memory_v1"); } catch (_) {}
+    try { localStorage.removeItem("trufman_bot_memory_v3"); } catch (_) {}
+    // optional: reset juga di cloud
+    seatsToSync.forEach(s => cloudSave(s, { version: 3, weights: {}, games: 0, resetAt: new Date().toISOString() }));
   }
 
   const leaderboard = useMemo(() => {
@@ -607,7 +632,7 @@ export default function TrufmanApp() {
           <button
             onClick={resetBotLearning}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
-            title="Hapus pembelajaran jangka panjang (localStorage)"
+            title="Hapus pembelajaran jangka panjang (localStorage + cloud)"
           >
             Reset Learned Policy
           </button>
@@ -885,7 +910,7 @@ function RoundSummary({ mode, trump, bids, targets, tricksWon, onNext }) {
 /** === UI Bits: Countdown Overlays === */
 function CountdownOverlay({ visible, ms, total }) {
   if (!visible || total <= 0) return null;
-  const pct = total > 0 ? Math.max(0, Math.min(1, ms / total)) : 0; // 1→0
+  const pct = total > 0 ? Math.max(0, Math.min(1, ms / total)) : 0;
   const deg = (1 - pct) * 360;
 
   return (
@@ -1031,4 +1056,4 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
       </div>
     </div>
   );
-}
+} 
