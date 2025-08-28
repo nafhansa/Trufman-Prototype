@@ -133,7 +133,7 @@ export default function TrufmanApp() {
   // Setup Music on component mount
   useEffect(() => {
     if (!audioRef.current) {
-        audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3'); // Ganti dengan path file musik Anda
+        audioRef.current = new Audio('https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3');
         audioRef.current.loop = true;
         audioRef.current.volume = 0.3;
     }
@@ -535,14 +535,33 @@ export default function TrufmanApp() {
             {hands[3]?.map((_, i) => <SimpleCardBack key={i} vertical small />)}
           </div>
 
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="grid grid-cols-2 gap-6">
-              <TableSlot play={table.find((t) => t.player === 1)} />
-              <TableSlot play={table.find((t) => t.player === 2)} />
-              <TableSlot play={table.find((t) => t.player === 0)} />
-              <TableSlot play={table.find((t) => t.player === 3)} />
+          {/* ======================= BAGIAN YANG DIUBAH ======================= */}
+          {/* Layout kartu di tengah meja, disesuaikan dengan posisi pemain */}
+          <div className="absolute inset-0">
+            <div className="relative w-full h-full">
+              {/* Player 0 (Kamu, P1) - Bawah */}
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2">
+                <TableSlot play={table.find((t) => t.player === 0)} />
+              </div>
+              
+              {/* Player 1 (Bot, P2) - Kiri */}
+              <div className="absolute left-20 top-1/2 -translate-y-1/2">
+                <TableSlot play={table.find((t) => t.player === 1)} />
+              </div>
+              
+              {/* Player 2 (Bot, P3) - Atas */}
+              <div className="absolute top-20 left-1/2 -translate-x-1/2">
+                <TableSlot play={table.find((t) => t.player === 2)} />
+              </div>
+              
+              {/* Player 3 (Bot, P4) - Kanan */}
+              <div className="absolute right-20 top-1/2 -translate-y-1/2">
+                <TableSlot play={table.find((t) => t.player === 3)} />
+              </div>
             </div>
           </div>
+          {/* ===================== AKHIR BAGIAN YANG DIUBAH ===================== */}
+
 
           <CountdownOverlay visible={resolving && resolveDelayMs > 0} ms={resolveCountdownMs} total={resolveDelayMs} />
 
@@ -664,6 +683,7 @@ export default function TrufmanApp() {
   );
 }
 
+// ... Sisa komponen (Badge, CardFace, TableSlot, dll) tetap sama ...
 function Badge({ children }) {
   return <span className="inline-flex items-center rounded-md bg-zinc-700 text-stone-200 px-2 py-0.5 text-xs shadow-sm">{children}</span>;
 }
@@ -721,7 +741,7 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
         {ranks.length === 0 ? <option>–</option> : ranks.map((r) => <option key={r} value={r}>{rankLabel(r)} ({betFromRank(r)})</option>)}
       </select>
       <button type="button" className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed" disabled={!canSubmit} onClick={() => setBid(suit, rank)}>
-        Bet
+        Set
       </button>
     </div>
   );
