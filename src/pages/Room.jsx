@@ -8,6 +8,7 @@ import {
 } from "../lib/rooms";
 import { joinRoomPresence } from "../lib/presence";
 
+
 const SeatName = ["P1", "P2", "P3", "P4"];
 
 function displayNameFromUser(u) {
