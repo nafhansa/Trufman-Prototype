@@ -1,3 +1,5 @@
+// src/App.jsx
+import { Link } from "react-router-dom";
 import { cloudLoad, cloudSave, debounce } from './lib/cloudMemory.js'
 import { createLearningBot } from "./bots/learningBot.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -331,6 +333,7 @@ export default function TrufmanApp() {
     if (pid !== currentPlayer) return false;
 
     if (!leadSuit) {
+      // Dilarang lead truf sebelum Truf Broken kecuali semua kartu pemain itu truf
       if (card.suit === trump && !trumpBroken) {
         const hasNonTrump = hands[pid].some((c) => c.suit !== trump);
         if (hasNonTrump) return false;
@@ -453,6 +456,7 @@ export default function TrufmanApp() {
     resolvingRef.current = true;
     setResolving(true);
 
+    // buka semua kartu yang disembunyikan (truf) ketika 4 kartu lengkap
     setTable((prev) => prev.map((p) => (p.hidden ? { ...p, hidden: false } : p)));
 
     const trickPlays = [...table];
@@ -594,9 +598,12 @@ export default function TrufmanApp() {
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
         <header className="flex items-center justify-between mb-3">
-          <h1 className="text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
-            Trufman
-          </h1>
+          <div className="flex items-center gap-3">
+            <Link to="/" className="text-stone-300 text-sm underline">← Lobby</Link>
+            <h1 className="text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
+              Trufman
+            </h1>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={toggleMusic}

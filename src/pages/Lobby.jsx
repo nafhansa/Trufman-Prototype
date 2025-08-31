@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { createRoom, joinByCode } from "../lib/rooms";
+import LogoutButton from "../components/LogoutButton";
 
 export default function Lobby() {
   const nav = useNavigate();
@@ -35,6 +36,17 @@ export default function Lobby() {
 
   return (
     <div className="min-h-screen w-full bg-zinc-900 text-stone-200 grid place-items-center px-4">
+      {/* Top bar: Dashboard + Logout */}
+      <div className="fixed top-3 right-3 flex items-center gap-2">
+        <Link
+          to="/dashboard"
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
+        >
+          Dashboard
+        </Link>
+        <LogoutButton />
+      </div>
+
       <div className="w-full max-w-md bg-zinc-800/60 border border-zinc-700 rounded-2xl p-5 shadow">
         <h1 className="text-2xl font-extrabold text-amber-300 mb-4">Trufman — Lobby</h1>
 
@@ -68,6 +80,16 @@ export default function Lobby() {
         <p className="mt-4 text-xs opacity-60">
           Tips: setelah room dibuat, URL bisa dibagikan. Join juga bisa pakai prefix UUID (contoh 8–10 karakter pertama).
         </p>
+
+        {/* Opsi main vs bot (pakai App.jsx) */}
+        <div className="mt-5">
+          <Link
+            to="/solo"
+            className="w-full inline-flex justify-center px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-stone-100"
+          >
+            Play vs Self-Learning Bot
+          </Link>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/Play.jsx
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase, getUser } from "../lib/supabaseClient";
 import { fetchSeats, fetchState } from "../lib/rooms";
@@ -14,11 +15,11 @@ const SUITS = [
 ];
 const suitOrder = { C: 0, D: 1, H: 2, S: 3 };
 const SeatName = ["P1", "P2", "P3", "P4"];
+const MAX_ROUNDS = 4;
 
 const rankLabel = (r) => (r <= 10 ? String(r) : ({ 11: "J", 12: "Q", 13: "K", 14: "A" }[r]));
 const betFromRank = (rank) => (rank === 14 ? 1 : (rank >= 11 && rank <= 13 ? 0 : rank));
-
-function suitIcon(s) { return SUITS.find(x => x.key === s)?.icon || "?" }
+const suitIcon = (s) => SUITS.find((x) => x.key === s)?.icon || "?";
 
 function cardFromId(id) {
   const s = id.slice(-1).toUpperCase();
@@ -50,7 +51,7 @@ function shuffle(a) {
   return arr;
 }
 
-/* ========================= UI atoms (sesuai App.jsx) ========================= */
+/* ========================= UI atoms ========================= */
 
 function Badge({ children }) {
   return (
@@ -177,35 +178,78 @@ export default function Play() {
 
   // current user
   const meRef = useRef(null);
+  const [meId, setMeId] = useState(null);
+
+  // small toast (untuk pesan invalid play dsb)
+  const [toast, setToast] = useState("");
 
   // game state client
   const [g, setG] = useState({
     round: 1,
     dealer: 0,
-    phase: "bidding", // "bidding" | "play"
+    phase: "bidding", // "bidding" | "play" | "ended"
     currentPlayer: 0,
     leadSuit: null,
     trump: null,
-    bids: [null, null, null, null], // {count,suit,rank} | null
+    trumpBroken: false,
+    mode: null,               // ATAS/BAWAH
+    bids: [null, null, null, null],
     bidsRevealed: false,
     targets: [0,0,0,0],
-    table: [], // [{player, card:"AS"}]
+    table: [], // [{player, card, hidden?}]
     tricksWon: [0,0,0,0],
-    myHand: [],
-    oppCounts: [13,13,13], // jumlah kartu lawan (dummy UI)
+    scores: [0,0,0,0],          // total skor akumulatif
+    handSizes: [13,13,13,13],   // ukuran tangan tiap kursi (non-privat)
+    myHand: [],                 // kartu saya (privat via event "hand" + DB)
   });
 
   // channel ref
   const chRef = useRef(null);
+  const pgHandsRef = useRef(null);
+  const [ready, setReady] = useState(false);
 
   // ---------- initial data ----------
   useEffect(() => {
     (async () => {
       const u = await getUser();
       meRef.current = u;
+      setMeId(u?.id ?? null);
+
+      // seats + room info
       const [seatsRows, st] = await Promise.all([fetchSeats(roomId), fetchState(roomId)]);
       setSeats(seatsRows);
       setRoomInfo(st);
+      setReady(true);
+
+      // (HYBRID) initial fetch my hand from DB (kalau ada)
+      if (u?.id) {
+        const { data: myRows, error } = await supabase
+          .from("hands")
+          .select("card")
+          .eq("room_id", roomId)
+          .eq("owner", u.id);
+        if (!error && Array.isArray(myRows)) {
+          setG((o) => ({ ...o, myHand: (myRows || []).map(r => cardFromId(r.card)) }));
+        }
+      }
+
+      // (HYBRID) initial fetch persisted room state jika ada
+      try {
+        const { data: rs } = await supabase
+          .from("room_states")
+          .select("state_json")
+          .eq("room_id", roomId)
+          .maybeSingle();
+        const s = rs?.state_json;
+        if (s) {
+          setG((old) => ({
+            ...old,
+            ...s,
+            myHand: old.myHand,
+            table: (s.table || []).map((t) => ({ ...t })),
+          }));
+        }
+      } catch (_) {}
     })();
   }, [roomId]);
 
@@ -220,8 +264,25 @@ export default function Play() {
 
   const isHost = !!roomInfo?.created_by && meRef.current?.id === roomInfo.created_by;
 
-  // ---------- realtime channel ----------
+  // seat saya (0..3) atau null kalau belum duduk
+  const mySeat = useMemo(
+    () => seats.find((s) => s.user_id === meId)?.seat ?? null,
+    [seats, meId]
+  );
+
+  // mapping kursi absolut <-> relatif ke mySeat
+  const absToRel = useCallback(
+    (abs) => (mySeat == null ? abs : (abs - mySeat + 4) % 4),
+    [mySeat]
+  );
+  const relToAbs = useCallback(
+    (rel) => (mySeat == null ? rel : (mySeat + rel) % 4),
+    [mySeat]
+  );
+
+  // ---------- realtime channel (broadcast) ----------
   useEffect(() => {
+    if (!ready) return;
     const ch = supabase.channel(`game:${roomId}`, {
       config: { broadcast: { self: true, ack: true } },
     });
@@ -234,18 +295,25 @@ export default function Play() {
         ...old,
         ...s,
         myHand: old.myHand, // jangan overwrite hand di event state publik
-        table: (s.table || []).map(t => ({ ...t })),
+        table: (s.table || []).map((t) => ({ ...t })),
       }));
     });
 
-    // PRIVATE HAND (khusus user)
+    // PRIVATE HAND (khusus user) — jalur cepat via broadcast
     ch.on("broadcast", { event: "hand" }, ({ payload }) => {
-      // mendukung payload: {to, cards:[...]} atau langsung array
       const userId = payload?.to;
       const cards = Array.isArray(payload?.cards) ? payload.cards : payload;
       if (userId && userId !== meRef.current?.id) return;
       if (!Array.isArray(cards)) return;
       setG((o) => ({ ...o, myHand: cards.map(cardFromId) }));
+    });
+
+    // toast personal
+    ch.on("broadcast", { event: "toast" }, ({ payload }) => {
+      if (!payload) return;
+      if (payload.to && payload.to !== meRef.current?.id) return;
+      setToast(String(payload.msg || payload));
+      setTimeout(() => setToast(""), 1500);
     });
 
     // subscribe → minta sync
@@ -255,8 +323,40 @@ export default function Play() {
       }
     });
 
-    return () => { supabase.removeChannel(ch); };
-  }, [roomId]);
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [roomId, ready]);
+
+  // ---------- Postgres Changes: my hand (persist path) ----------
+  useEffect(() => {
+    if (!meRef.current?.id) return;
+    const uid = meRef.current.id;
+    const chan = supabase
+      .channel(`room:${roomId}:hands:${uid}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "hands",
+        filter: `room_id=eq.${roomId} AND owner=eq.${uid}`,
+      }, (payload) => {
+        if (payload.eventType === "INSERT") {
+          const c = cardFromId(payload.new.card);
+          setG(o => ({ ...o, myHand: [...(o.myHand || []), c] }));
+        } else if (payload.eventType === "DELETE") {
+          const id = payload.old.card;
+          setG(o => ({ ...o, myHand: (o.myHand || []).filter(h => h.id !== id) }));
+        } else if (payload.eventType === "UPDATE") {
+          // optional: ignore (shouldn't happen for hands)
+        }
+      })
+      .subscribe();
+
+    pgHandsRef.current = chan;
+    return () => {
+      if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current);
+    };
+  }, [roomId, meId]);
 
   // ---------- Host Controller ----------
   useHostController(isHost, roomId, seats, chRef);
@@ -273,132 +373,203 @@ export default function Play() {
   const sumBids = g.bids.reduce((a, b) => a + (b?.count || 0), 0);
 
   const leaderboard = useMemo(() => {
-    return [0,1,2,3]
+    return [0, 1, 2, 3]
       .map((i) => ({
         i,
-        name: seats.find(s=>s.seat===i)?.display_name || SeatName[i],
-        score: 0
+        name: seats.find((s) => s.seat === i)?.display_name || SeatName[i],
+        score: g.scores?.[i] ?? 0,
       }))
-      .sort((a,b)=>b.score-a.score);
-  }, [seats]);
+      .sort((a, b) => b.score - a.score);
+  }, [seats, g.scores]);
+
+  // hitung jumlah kartu lawan relatif (pakai handSizes publik)
+  const oppCounts = useMemo(() => {
+    if (mySeat == null) return [13, 13, 13];
+    return [
+      g.handSizes?.[(mySeat + 1) % 4] ?? 13,
+      g.handSizes?.[(mySeat + 2) % 4] ?? 13,
+      g.handSizes?.[(mySeat + 3) % 4] ?? 13,
+    ];
+  }, [g.handSizes, mySeat]);
 
   // ---------- Actions (client → host) ----------
   function submitBid(suit, rank) {
-    const bid = { count: betFromRank(rank), suit, rank };
+    if (mySeat == null) return;
+    const bid = { count: betFromRank(rank), suit, rank, from: meRef.current?.id };
     chRef.current?.send({ type: "broadcast", event: "bid", payload: bid });
   }
 
+  // client-side guard: follow-suit, lead trump rule & giliran
+  const canPlayCard = useCallback(
+    (c) => {
+      if (g.phase !== "play" || mySeat == null) return false;
+      if (g.currentPlayer !== mySeat) return false;
+
+      // awal trik
+      if (!g.leadSuit) {
+        // tidak boleh lead truf sebelum broken, kecuali semua kartu di tangan = truf
+        if (c.suit === g.trump && !g.trumpBroken) {
+          const hasNonTrump = (g.myHand || []).some((h) => h.suit !== g.trump);
+          if (hasNonTrump) return false;
+        }
+        return true;
+      }
+
+      // follow suit wajib jika bisa
+      const hasLead = (g.myHand || []).some((h) => h.suit === g.leadSuit);
+      if (hasLead && c.suit !== g.leadSuit) return false;
+      return true;
+    },
+    [g.phase, g.currentPlayer, g.leadSuit, g.myHand, mySeat, g.trump, g.trumpBroken]
+  );
+
   function playCard(card) {
-    if (g.phase !== "play") return;
-    chRef.current?.send({ type: "broadcast", event: "play_card", payload: card.id });
+    if (!canPlayCard(card)) return;
+    chRef.current?.send({
+      type: "broadcast",
+      event: "play_card",
+      payload: { from: meRef.current?.id, card: card.id },
+    });
   }
 
   // ---------- UI ----------
-  const targetOrDash = (i) => (g.phase === "play" && g.targets[i] !== undefined ? g.targets[i] : "–");
+  const targetOrDash = (absSeat) =>
+    g.phase === "play" && g.targets[absSeat] !== undefined ? g.targets[absSeat] : "–";
+
+  const relName = (relIdx) => {
+    const abs = relToAbs(relIdx);
+    return seats.find((s) => s.seat === abs)?.display_name || SeatName[abs];
+  };
+  const relTricks = (relIdx) => {
+    const abs = relToAbs(relIdx);
+    return g.tricksWon[abs] ?? 0;
+  };
+  const relTarget = (relIdx) => targetOrDash(relToAbs(relIdx));
 
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <Link to={`/room/${roomId}`} className="text-stone-300 text-sm underline">← Lobby</Link>
+            <Link to={`/room/${roomId}`} className="text-stone-300 text-sm underline">
+              ← Lobby
+            </Link>
             <h1 className="text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
               Trufman
             </h1>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-stone-300 text-sm">
-              Room: <span className="tabular-nums">{roomId.slice(0,8)}</span> • Ronde: {g.round} • Dealer: P{g.dealer+1}
+              Room: <span className="tabular-nums">{roomId.slice(0, 8)}</span> • Ronde: {g.round}/{MAX_ROUNDS} • Dealer: P{g.dealer + 1}
             </div>
             <div className="text-xs text-stone-300">
-              Online: {online.length} — {online.map(o => o.display_name || "Player").join(", ")}
+              Online: {online.length} — {online.map((o) => o.display_name || "Player").join(", ")}
             </div>
           </div>
         </header>
 
         {/* BOARD */}
         <div className="relative mx-auto w-full max-w-[1200px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-800 to-red-950 rounded-2xl shadow-inner border-4 border-zinc-950 min-h-[560px] overflow-hidden">
-
+          {/* label skor sisi (relatif) */}
           <div className="absolute top-2 left-1/2 -translate-x-1/2 text-stone-200 font-semibold drop-shadow">
-            {(seats.find(s=>s.seat===2)?.display_name || SeatName[2])} • {g.tricksWon[2]}/{targetOrDash(2)}
+            {relName(2)} • {relTricks(2)}/{relTarget(2)}
           </div>
           <div className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-stone-200 font-semibold drop-shadow">
-            {(seats.find(s=>s.seat===1)?.display_name || SeatName[1])} • {g.tricksWon[1]}/{targetOrDash(1)}
+            {relName(1)} • {relTricks(1)}/{relTarget(1)}
           </div>
           <div className="absolute right-2 top-1/2 -translate-y-1/2 rotate-90 text-stone-200 font-semibold drop-shadow">
-            {(seats.find(s=>s.seat===3)?.display_name || SeatName[3])} • {g.tricksWon[3]}/{targetOrDash(3)}
+            {relName(3)} • {relTricks(3)}/{relTarget(3)}
           </div>
 
-          {/* Kartu belakang lawan */}
+          {/* Kartu belakang lawan (left/top/right relatif) */}
           <div className="absolute top-10 left-1/2 -translate-x-1/2 flex gap-2">
-            {Array.from({ length: g.oppCounts[1] ?? 13 }).map((_, i) => <SimpleCardBack key={`t-${i}`} small />)}
+            {Array.from({ length: oppCounts[1] }).map((_, i) => (
+              <SimpleCardBack key={`t-${i}`} small />
+            ))}
           </div>
           <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-            {Array.from({ length: g.oppCounts[0] ?? 13 }).map((_, i) => <SimpleCardBack key={`l-${i}`} vertical small />)}
+            {Array.from({ length: oppCounts[0] }).map((_, i) => (
+              <SimpleCardBack key={`l-${i}`} vertical small />
+            ))}
           </div>
           <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-2">
-            {Array.from({ length: g.oppCounts[2] ?? 13 }).map((_, i) => <SimpleCardBack key={`r-${i}`} vertical small />)}
+            {Array.from({ length: oppCounts[2] }).map((_, i) => (
+              <SimpleCardBack key={`r-${i}`} vertical small />
+            ))}
           </div>
 
-          {/* Meja tengah */}
+          {/* Meja tengah — map kartu absolut ke posisi relatif */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="relative w-80 h-64">
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-auto">
-                <TableSlot play={g.table.find(t => t.player === 0)} />
+                <TableSlot play={g.table.find((t) => absToRel(t.player) === 0)} />
               </div>
               <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-auto">
-                <TableSlot play={g.table.find(t => t.player === 1)} />
+                <TableSlot play={g.table.find((t) => absToRel(t.player) === 1)} />
               </div>
               <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-auto">
-                <TableSlot play={g.table.find(t => t.player === 2)} />
+                <TableSlot play={g.table.find((t) => absToRel(t.player) === 2)} />
               </div>
               <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-auto">
-                <TableSlot play={g.table.find(t => t.player === 3)} />
+                <TableSlot play={g.table.find((t) => absToRel(t.player) === 3)} />
               </div>
             </div>
           </div>
 
-          {/* kartu kita */}
+          {/* kartu kita (selalu di bawah) */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[95%]">
             <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow">
-              {(seats.find(s=>s.seat===0)?.display_name || "Kamu")} • {g.tricksWon[0]}/{targetOrDash(0)}
+              {(mySeat != null
+                ? seats.find((s) => s.seat === mySeat)?.display_name
+                : "Kamu") || "Kamu"}{" "}
+              • {mySeat != null ? (g.tricksWon[mySeat] ?? 0) : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-center">
               {(g.myHand || []).map((c) => (
-                <CardFace
-                  key={c.id}
-                  card={c}
-                  disabled={g.phase !== "play"}
-                  onClick={() => playCard(c)}
-                />
+                <CardFace key={c.id} card={c} disabled={!canPlayCard(c)} onClick={() => playCard(c)} />
               ))}
             </div>
           </div>
+
+          {/* toast kecil */}
+          {toast && (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/70 text-stone-100 px-3 py-1 rounded">
+              {toast}
+            </div>
+          )}
         </div>
 
         {/* Info bar */}
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
           <Badge>Fase: {g.phase}</Badge>
-          <Badge>Giliran: P{(g.currentPlayer ?? 0)+1}</Badge>
+          <Badge>Giliran: P{(g.currentPlayer ?? 0) + 1}</Badge>
           <Badge>Lead: {g.leadSuit ? suitIcon(g.leadSuit) : "–"}</Badge>
           <Badge>Truf: {g.trump ? suitIcon(g.trump) : "–"}</Badge>
+          <Badge>Truf Broken: {g.trumpBroken ? "Ya" : "Belum"}</Badge>
+          <Badge>Mode: {g.mode || "–"}</Badge>
           <Badge>Total Bet: {g.bidsRevealed ? `${sumBids}/13` : "—/13"}</Badge>
         </div>
 
         {/* Bidding */}
         {g.phase === "bidding" && (
           <div className="mx-auto w/full max-w-[1200px] mt-3 grid md:grid-cols-4 gap-3">
-            {[0,1,2,3].map((p) => {
+            {[0, 1, 2, 3].map((p) => {
               const bid = g.bids[p];
-              const isYou = p===0;
+              const isYou = p === mySeat;
               const bidCard = bid
-                ? { id:`BID${p}`, suit:bid.suit, rank:bid.rank, label:`${rankLabel(bid.rank)}${suitIcon(bid.suit)}`, suitIcon:suitIcon(bid.suit) }
+                ? {
+                    id: `BID${p}`,
+                    suit: bid.suit,
+                    rank: bid.rank,
+                    label: `${rankLabel(bid.rank)}${suitIcon(bid.suit)}`,
+                    suitIcon: suitIcon(bid.suit),
+                  }
                 : null;
               return (
                 <div key={p} className="bg-zinc-800 rounded-xl shadow p-3 text-stone-100">
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-semibold">
-                      {seats.find(s=>s.seat===p)?.display_name || `P${p+1}`} {isYou ? "(Kamu)" : ""}
+                      {seats.find((s) => s.seat === p)?.display_name || `P${p + 1}`} {isYou ? "(Kamu)" : ""}
                     </div>
                     <Badge>Bid: {bid ? (g.bidsRevealed ? `${bid.count}${suitIcon(bid.suit)}` : "...") : "..."}</Badge>
                   </div>
@@ -406,16 +577,12 @@ export default function Play() {
                   {bid ? (
                     <div className="h-10 flex items-center">
                       {g.bidsRevealed ? <SimpleCardFace card={bidCard} /> : <SimpleCardBack small />}
-                      <span className="ml-2 text-xs text-stone-400">
-                        {g.bidsRevealed ? "Terbuka" : "Menunggu..."}
-                      </span>
+                      <span className="ml-2 text-xs text-stone-400">{g.bidsRevealed ? "Terbuka" : "Menunggu..."}</span>
                     </div>
+                  ) : isYou ? (
+                    <PlayerBidForm handBySuit={handBySuit} onSubmit={submitBid} disabled={!!g.bids[mySeat ?? -1]} />
                   ) : (
-                    isYou ? (
-                      <PlayerBidForm handBySuit={handBySuit} onSubmit={submitBid} disabled={!!g.bids[0]} />
-                    ) : (
-                      <div className="text-stone-400 text-sm h-10 flex items-center">Menunggu...</div>
-                    )
+                    <div className="text-stone-400 text-sm h-10 flex items-center">Menunggu...</div>
                   )}
                 </div>
               );
@@ -423,7 +590,7 @@ export default function Play() {
             <div className="md:col-span-4 flex justify-end">
               <button
                 className="px-4 py-2 rounded-xl text-white font-bold transition disabled:bg-zinc-600 bg-red-700 hover:bg-red-600"
-                onClick={() => chRef.current?.send({ type:"broadcast", event:"start_play" })}
+                onClick={() => chRef.current?.send({ type: "broadcast", event: "start_play" })}
                 disabled={!allBidsIn}
               >
                 Mulai Main
@@ -432,29 +599,31 @@ export default function Play() {
           </div>
         )}
 
-        {/* Leaderboard dummy */}
+        {/* Skor */}
         <div className="mt-4 grid md:grid-cols-2 gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[0,1,2,3].map((p) => (
-              <div key={p} className="bg-zinc-800 rounded-xl shadow p-3">
-                <div className="flex items-center justify-between text-stone-100">
-                  <div className="font-semibold">
-                    {p===0 ? "Skor Kamu" : `Skor ${(seats.find(s=>s.seat===p)?.display_name || SeatName[p])}`}
+            {[0, 1, 2, 3].map((p) => {
+              const isYou = p === mySeat;
+              const name = seats.find((s) => s.seat === p)?.display_name || SeatName[p];
+              return (
+                <div key={p} className="bg-zinc-800 rounded-xl shadow p-3">
+                  <div className="flex items-center justify-between text-stone-100">
+                    <div className="font-semibold">{isYou ? "Skor Kamu" : `Skor ${name}`}</div>
+                    <Badge>Total: {g.scores?.[p] ?? 0}</Badge>
                   </div>
-                  <Badge>Total: 0</Badge>
-                </div>
-                <div className="mt-1 text-sm text-stone-300 grid grid-cols-2 gap-1">
-                  <div>Bid</div>
-                  <div className="text-right">
-                    {g.bids[p] ? (g.bidsRevealed ? `${g.bids[p].count}${suitIcon(g.bids[p].suit)}` : "...") : "–"}
+                  <div className="mt-1 text-sm text-stone-300 grid grid-cols-2 gap-1">
+                    <div>Bid</div>
+                    <div className="text-right">
+                      {g.bids[p] ? (g.bidsRevealed ? `${g.bids[p].count}${suitIcon(g.bids[p].suit)}` : "...") : "–"}
+                    </div>
+                    <div>Target</div>
+                    <div className="text-right">{g.targets[p] ?? "–"}</div>
+                    <div>Trik</div>
+                    <div className="text-right">{g.tricksWon[p] ?? 0}</div>
                   </div>
-                  <div>Target</div>
-                  <div className="text-right">{g.targets[p] ?? "–"}</div>
-                  <div>Trik</div>
-                  <div className="text-right">{g.tricksWon[p] ?? 0}</div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="bg-zinc-800 rounded-xl shadow p-3">
             <h3 className="font-semibold text-stone-100 mb-2">Leaderboard</h3>
@@ -462,37 +631,67 @@ export default function Play() {
               {leaderboard.map((row, idx) => (
                 <li key={row.i} className="flex items-center justify-between text-sm p-1 rounded-md bg-zinc-700/50">
                   <span className="flex items-center gap-2 text-stone-200">
-                    <span className={`inline-flex w-6 h-6 items-center justify-center rounded-full font-bold ${idx===0?'bg-amber-400 text-zinc-900':'bg-zinc-600'}`}>{idx+1}</span>
+                    <span
+                      className={`inline-flex w-6 h-6 items-center justify-center rounded-full font-bold ${
+                        idx === 0 ? "bg-amber-400 text-zinc-900" : "bg-zinc-600"
+                      }`}
+                    >
+                      {idx + 1}
+                    </span>
                     <span>{row.name}</span>
                   </span>
-                  <span className="font-semibold text-stone-100">0 Poin</span>
+                  <span className="font-semibold text-stone-100">{row.score} Poin</span>
                 </li>
               ))}
             </ol>
           </div>
         </div>
+
+        {g.phase === "ended" && (
+          <div className="mt-4 p-3 rounded-xl bg-emerald-800/50 text-emerald-100">
+            Game selesai. Pemenang:{" "}
+            <strong>
+              {
+                leaderboard.length
+                  ? leaderboard[0].name
+                  : "—"
+              }
+            </strong>
+            .
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/* ========================= Host Controller hook ========================= */
+/* ========================= Host Controller hook (HYBRID: broadcast + DB) ========================= */
 
 function useHostController(isHost, roomId, seats, chRef) {
-  const hostState = useRef(null); // {publicState, hands: {0:[],1:[],2:[],3:[]}}
-  const seatOf = (userId) => seats.find(s=>s.user_id===userId)?.seat ?? null;
+  const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
 
-  // send helpers
+  const seatOf = (userId) => seats.find((s) => s.user_id === userId)?.seat ?? null;
+  const userIdOfSeat = (seat) => seats.find((s) => s.seat === seat)?.user_id ?? null;
+
+  // ---- send helpers ----
+  const persistPublicState = async () => {
+    try {
+      await supabase.from("room_states").upsert({
+        room_id: roomId,
+        state_json: hostState.current.publicState,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (_) {}
+  };
   const sendState = () => {
     if (!hostState.current) return;
-    chRef.current?.send({
-      type: "broadcast",
-      event: "state",
-      payload: hostState.current.publicState,
-    });
+    const payload = hostState.current.publicState;
+    chRef.current?.send({ type: "broadcast", event: "state", payload });
+    // simpan ke DB (best-effort)
+    persistPublicState();
   };
-  const sendHandToSeat = async (seat) => {
-    const userId = seats.find(s=>s.seat===seat)?.user_id;
+  const sendHandToSeat = (seat) => {
+    const userId = userIdOfSeat(seat);
     if (!userId) return;
     const cards = hostState.current?.hands?.[seat] || [];
     chRef.current?.send({
@@ -501,24 +700,59 @@ function useHostController(isHost, roomId, seats, chRef) {
       payload: { to: userId, cards },
     });
   };
-  const sendAllHands = () => [0,1,2,3].forEach(sendHandToSeat);
+  const sendToastToSeat = (seat, msg) => {
+    const userId = userIdOfSeat(seat);
+    if (!userId) return;
+    chRef.current?.send({
+      type: "broadcast",
+      event: "toast",
+      payload: { to: userId, msg },
+    });
+  };
+  const sendAllHands = () => [0, 1, 2, 3].forEach(sendHandToSeat);
 
-  const startNewRound = () => {
-    // deal
+  // (HYBRID) persist hands to DB
+  const persistHands = async () => {
+    try {
+      // bersihkan dulu semua hands untuk room ini
+      await supabase.from("hands").delete().eq("room_id", roomId);
+    } catch (_) {}
+    try {
+      const rows = [];
+      for (const s of [0, 1, 2, 3]) {
+        const uid = userIdOfSeat(s);
+        if (!uid) continue;
+        for (const id of hostState.current.hands[s]) {
+          rows.push({ room_id: roomId, owner: uid, card: id });
+        }
+      }
+      if (rows.length) {
+        const { error } = await supabase.from("hands").insert(rows);
+        if (error) console.error("Insert hands failed:", error);
+      }
+    } catch (e) {
+      console.error("Persist hands error:", e);
+    }
+  };
+
+  // start ronde baru (deal + reset publik)
+  const startNewRound = async () => {
     const deck = shuffle(makeDeck());
-    const hands = { 0:[],1:[],2:[],3:[] };
-    for (let i=0;i<52;i++) hands[i%4].push(deck[i]);
-    // sort hands a bit for nicer UI
-    for (let s of [0,1,2,3]) {
-      hands[s].sort((a,b)=>{
-        const A=cardFromId(a), B=cardFromId(b);
-        if (A.suit!==B.suit) return suitOrder[A.suit]-suitOrder[B.suit];
-        return A.rank-B.rank;
+    const hands = { 0: [], 1: [], 2: [], 3: [] };
+    for (let i = 0; i < 52; i++) hands[i % 4].push(deck[i]);
+
+    // sort biar enak dilihat
+    for (const s of [0, 1, 2, 3]) {
+      hands[s].sort((a, b) => {
+        const A = cardFromId(a), B = cardFromId(b);
+        if (A.suit !== B.suit) return suitOrder[A.suit] - suitOrder[B.suit];
+        return A.rank - B.rank;
       });
     }
+
     const prev = hostState.current?.publicState;
-    const round = prev ? prev.round+1 : 1;
-    const dealer = prev ? (prev.dealer+1)%4 : 0;
+    const round = prev ? prev.round + 1 : 1;
+    const dealer = prev ? (prev.dealer + 1) % 4 : 0;
 
     hostState.current = {
       hands,
@@ -526,123 +760,212 @@ function useHostController(isHost, roomId, seats, chRef) {
         round,
         dealer,
         phase: "bidding",
-        currentPlayer: (dealer+1)%4,
+        currentPlayer: (dealer + 1) % 4,
         leadSuit: null,
         trump: null,
-        bids: [null,null,null,null],
+        trumpBroken: false,
+        mode: null,
+        bids: [null, null, null, null],
         bidsRevealed: false,
-        targets: [0,0,0,0],
+        targets: [0, 0, 0, 0],
         table: [],
-        tricksWon: [0,0,0,0],
-        oppCounts: [13,13,13],
-      }
+        tricksWon: [0, 0, 0, 0],
+        scores: prev?.scores ? prev.scores.slice() : [0, 0, 0, 0],
+        handSizes: [13, 13, 13, 13],
+      },
     };
+
+    sendState();
+    sendAllHands();   // broadcast hands (jalur cepat)
+    persistHands();   // simpan ke DB (persist)
   };
 
-  // winner of a trick
+  // penentu pemenang trik sederhana
   const trickWinner = (table, trump, lead) => {
     const strength = (id) => {
       const c = cardFromId(id);
-      return (c.suit===trump?3:c.suit===lead?2:0)*100 + c.rank;
+      return (c.suit === trump ? 3 : c.suit === lead ? 2 : 0) * 100 + c.rank;
     };
     let best = table[0];
-    for (let i=1;i<table.length;i++) {
+    for (let i = 1; i < table.length; i++) {
       if (strength(table[i].card) > strength(best.card)) best = table[i];
     }
     return best.player;
   };
 
+  // akhiri ronde → hitung skor → next ronde / end game
+  const finishRoundAndMaybeContinue = () => {
+    const st = hostState.current.publicState;
+
+    // === Skoring versi App.jsx ===
+    for (let i = 0; i < 4; i++) {
+      const got = st.tricksWon[i] || 0;
+      const tgt = st.targets[i] || 0;
+      let delta = 0;
+      if (got === tgt) delta = tgt;
+      else if (got < tgt) delta = st.mode === "ATAS" ? -2 * (tgt - got) : -(tgt - got);
+      else delta = st.mode === "BAWAH" ? -2 * (got - tgt) : -(got - tgt);
+      st.scores[i] = (st.scores[i] || 0) + delta;
+    }
+
+    if (st.round >= MAX_ROUNDS) {
+      st.phase = "ended";
+      sendState();
+      return;
+    }
+
+    setTimeout(() => {
+      startNewRound();
+    }, 700);
+  };
+
   useEffect(() => {
     if (!isHost || !chRef.current) return;
+    const ch = chRef.current;
 
-    // event handlers only host cares
+    // ---- handlers (host only) ----
     const onSync = () => {
       if (!hostState.current) startNewRound();
-      sendState();
-      sendAllHands();
+      else {
+        sendState();
+        sendAllHands();
+      }
     };
 
-    const onBid = async ({ payload, sender }) => {
+    const onBid = ({ payload }) => {
       if (!hostState.current) return;
-      const seat = seatOf(sender?.user_id);
-      if (seat==null) return;
-      const b = { count: Number(payload.count)||0, suit: payload.suit, rank: payload.rank };
+      const fromUser = payload?.from;
+      const seat = seatOf(fromUser);
+      if (seat == null) return;
+
+      const b = { count: Number(payload.count) || 0, suit: payload.suit, rank: payload.rank };
       hostState.current.publicState.bids[seat] = b;
 
-      // jika semua bid masuk → tentukan trump sederhana (rank tertinggi, tie by suitOrder)
+      // kalau 4 bid sudah masuk → tentukan trump, MODE, dan TARGETS
       const bids = hostState.current.publicState.bids;
       if (bids.every(Boolean)) {
+        // trump = suit dari bid dengan rank tertinggi (seri: suitOrder)
         let bestIdx = 0;
-        for (let i=1;i<4;i++){
-          const bi=bids[i], bb=bids[bestIdx];
-          if (bi.rank>bb.rank || (bi.rank===bb.rank && suitOrder[bi.suit]>suitOrder[bb.suit])) bestIdx=i;
+        for (let i = 1; i < 4; i++) {
+          const bi = bids[i], bb = bids[bestIdx];
+          if (bi.rank > bb.rank || (bi.rank === bb.rank && suitOrder[bi.suit] > suitOrder[bb.suit])) bestIdx = i;
         }
-        hostState.current.publicState.trump = bids[bestIdx].suit;
-        hostState.current.publicState.targets = bids.map(x=>x.count);
+        const trump = bids[bestIdx].suit;
+        hostState.current.publicState.trump = trump;
+
+        // Mode & target
+        const sum = bids.reduce((a, x) => a + (x?.count || 0), 0);
+        const mode = sum >= 13 ? "ATAS" : "BAWAH";
+        const targets = bids.map((x) =>
+          mode === "ATAS" ? (x.count + 1) : Math.max(0, x.count - 1)
+        );
+        hostState.current.publicState.mode = mode;
+        hostState.current.publicState.targets = targets;
       }
       sendState();
     };
 
     const onStartPlay = () => {
       if (!hostState.current) return;
-      hostState.current.publicState.phase = "play";
-      hostState.current.publicState.bidsRevealed = true;
+      const st = hostState.current.publicState;
+      st.phase = "play";
+      st.bidsRevealed = true;
       sendState();
       sendAllHands();
     };
 
-    const onPlayCard = ({ payload, sender }) => {
+    const onPlayCard = async ({ payload }) => {
       if (!hostState.current) return;
-      const seat = seatOf(sender?.user_id);
-      if (seat==null) return;
+
+      const fromUser = payload?.from;
+      const cardId   = typeof payload === "string" ? payload : payload?.card || payload?.id;
+      const seat     = seatOf(fromUser);
+      if (seat == null || !cardId) return;
 
       const st = hostState.current.publicState;
-      if (st.phase !== "play") return;
-      if (seat !== st.currentPlayer) return; // bukan giliranmu
+      if (st.phase !== "play" || seat !== st.currentPlayer) return;
+      if (st.table.length >= 4) return;
 
-      // cek kartu ada di tangan
       const hand = hostState.current.hands[seat];
-      const idx = hand.indexOf(payload);
+      const idx  = hand.indexOf(cardId);
       if (idx === -1) return;
 
-      // lead suit set saat kartu pertama di meja
-      if (st.table.length===0) st.leadSuit = cardFromId(payload).suit;
+      const suit = cardFromId(cardId).suit;
 
-      // (opsional) validasi follow suit bisa ditambah di sini
+      // awal trik (set lead + larangan lead truf sebelum broken)
+      if (st.table.length === 0) {
+        if (suit === st.trump && !st.trumpBroken) {
+          const hasNonTrump = hand.some((id) => cardFromId(id).suit !== st.trump);
+          if (hasNonTrump) {
+            sendToastToSeat(seat, "Belum boleh lead truf (Truf Broken belum terjadi)!");
+            return;
+          }
+          // legal lead (karena tinggal truf semua) → break
+          st.trumpBroken = true;
+        }
+        st.leadSuit = suit;
+      } else {
+        // VALIDASI FOLLOW-SUIT
+        const hasLead = hand.some((id) => cardFromId(id).suit === st.leadSuit);
+        if (hasLead && suit !== st.leadSuit) {
+          sendToastToSeat(seat, "Harus ikut warna (follow suit)!");
+          return;
+        }
+        // buang truf saat tidak bisa ikut lead ⇒ break
+        if (suit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) {
+          st.trumpBroken = true;
+        }
+      }
 
-      hand.splice(idx,1); // remove from hand
-      st.table.push({ player: seat, card: payload });
+      // mainkan kartu (truf → hidden di meja)
+      hand.splice(idx, 1);
+      st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
+      st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
-      // update turn
-      st.currentPlayer = (st.currentPlayer+1)%4;
+      // persist removal ke DB hands (best-effort)
+      try {
+        const uid = userIdOfSeat(seat);
+        if (uid) await supabase.from("hands").delete().match({ room_id: roomId, owner: uid, card: cardId });
+      } catch (_) {}
+
+      // next turn
+      st.currentPlayer = (st.currentPlayer + 1) % 4;
 
       // selesai satu trik?
-      if (st.table.length===4) {
-        const win = trickWinner(st.table, st.trump, st.leadSuit);
-        st.tricksWon[win] += 1;
-        st.table = [];
-        st.leadSuit = null;
-        st.currentPlayer = win;
+      if (st.table.length === 4) {
+        // buka semua kartu dulu
+        st.table = st.table.map((t) => ({ ...t, hidden: false }));
+        sendState();
+
+        setTimeout(() => {
+          const win = trickWinner(st.table, st.trump, st.leadSuit);
+          st.tricksWon[win] += 1;
+          st.table = [];
+          st.leadSuit = null;
+          st.currentPlayer = win;
+
+          // kalau semua tangan habis → ronde selesai
+          const sumHands = st.handSizes.reduce((a, b) => a + b, 0);
+          if (sumHands === 0) {
+            sendState();
+            finishRoundAndMaybeContinue();
+            return;
+          }
+          sendState();
+        }, 600);
+        return; // sudah handle reveal & pengiriman state
       }
 
       sendState();
-      // kirim hand baru ke seat terkait
-      sendHandToSeat(seat);
+      sendHandToSeat(seat); // kirim tangan terbaru via broadcast
     };
 
-    const ch = chRef.current;
-
-    // host listens with sender metadata
-    ch.on("broadcast", { event: "sync" }, onSync);
-    ch.on("broadcast", { event: "bid" }, onBid);
+    // pasang listeners
+    ch.on("broadcast", { event: "sync" },       onSync);
+    ch.on("broadcast", { event: "bid" },        onBid);
     ch.on("broadcast", { event: "start_play" }, onStartPlay);
-    ch.on("broadcast", { event: "play_card" }, onPlayCard);
+    ch.on("broadcast", { event: "play_card" },  onPlayCard);
 
-    return () => {
-      ch.off("broadcast", { event: "sync" });
-      ch.off("broadcast", { event: "bid" });
-      ch.off("broadcast", { event: "start_play" });
-      ch.off("broadcast", { event: "play_card" });
-    };
+    return () => {};
   }, [isHost, seats, chRef]);
 }
