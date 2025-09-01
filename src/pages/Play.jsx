@@ -1,4 +1,5 @@
 // src/pages/Play.jsx
+import { maybeRunBots } from "../bots/learningBot";
 import React, {
   useEffect,
   useMemo,
@@ -10,6 +11,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase, getUser } from "../lib/supabaseClient";
 import { fetchSeats, fetchState } from "../lib/rooms";
 import { joinRoomPresence } from "../lib/presence";
+import { createLearningBot } from "../bots/learningBot";
+import { isBotUserId } from "../bots/learningBot";
 
 /* ========================= Helpers & constants ========================= */
 
@@ -461,7 +464,9 @@ export default function Play() {
   }, [roomId, meId]);
 
   // ---------- Host Controller ----------
-  useHostController(isHost, roomId, seats, chRef, timersRef);
+  useHostController(isHost, roomId, seats, chRef, timersRef
+    
+  );
 
   // ---------- Derived ----------
   const handBySuit = useMemo(() => {
@@ -881,6 +886,100 @@ export default function Play() {
 
 function useHostController(isHost, roomId, seats, chRef, timersRef) {
   const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
+  const botsRef = useRef({});     // seat -> instance bot
+
+const isSeatBot = (seat) => {
+  const row = seats.find((s) => s.seat === seat);
+  return !!row && (
+    row.is_bot ||
+    isBotUserId(row.user_id) ||
+    row.display_name?.startsWith?.("Bot ")
+    );
+  };
+  const botDelay = (min=250,max=700) => Math.floor(min + Math.random()*(max-min));
+  const schedule = (fn, ms=400) => {
+  const t = setTimeout(fn, ms);
+  timersRef.current.add(t);
+    return t;
+  };
+
+ // pastikan instance bot per seat ada dan sinkron seat-nya
+  const ensureBot = (seat) => {
+    if (!botsRef.current[seat]) {
+      botsRef.current[seat] = createLearningBot({
+          seat,
+          getState: () => ({
+          ...(hostState.current?.publicState || {}),
+          SUITS, // pakai konstanta dari file ini
+        }),
+      });
+    } else {
+      botsRef.current[seat].setSeat(seat);
+    }
+    return botsRef.current[seat];
+    };
+  
+// Jalankan aksi bot sesuai fase
+  const runBotsTick = () => {
+    if (!hostState.current) return;
+    const st = hostState.current.publicState;
+
+    // ====== BIDDING: seat bot yang belum bid -> bid sekarang ======
+    if (st.phase === "bidding") {
+      [0,1,2,3].forEach((seat) => {
+        if (!isSeatBot(seat)) return;
+        if (st.bids?.[seat]) return; // sudah bid
+        const bot = ensureBot(seat);
+        const hand = (hostState.current.hands?.[seat] || []).map(cardFromId);
+        const bid = bot.chooseBid(hand); // {count,suit,rank}
+        const from = userIdOfSeat(seat);
+        schedule(() => {
+          chRef.current?.send({
+            type: "broadcast",
+            event: "bid",
+            payload: { ...bid, from },
+          });
+        }, botDelay());
+      });
+      return; // fokus ke bidding dulu
+    }
+
+    // ====== PLAY: kalau giliran bot -> mainkan kartu ======
+    if (st.phase === "play") {
+      const seat = st.currentPlayer;
+      if (!isSeatBot(seat)) return;
+      const bot = ensureBot(seat);
+      const hand = (hostState.current.hands?.[seat] || []).map(cardFromId);
+      const table = (st.table || []).map(t => ({ player: t.player, card: cardFromId(t.card) }));
+      const need = (st.targets?.[seat] ?? 0) - (st.tricksWon?.[seat] ?? 0);
+      const ctx = {
+        hand,
+        leadSuit: st.leadSuit,
+        trump: st.trump,
+        table,
+        seen: [],                 // bisa kamu isi kalau mau
+        voidMap: {},              // diisi lewat observe* (lihat bawah)
+        need,
+        pos: table.length,
+        mode: st.mode,
+        seat,
+        handCounts: st.handSizes?.reduce((m, cnt, i)=> (m[i]=cnt, m), {}) || {},
+        trumpBroken: !!st.trumpBroken,
+      };
+      const pick = bot.pickCard(ctx);
+      if (pick) {
+        const from = userIdOfSeat(seat);
+        schedule(() => {
+          chRef.current?.send({
+            type: "broadcast",
+            event: "play_card",
+            payload: { from, card: pick.id },
+          });
+        }, botDelay(350, 900));
+      }
+    }
+  };
+
 
   const seatOf = (userId) =>
     seats.find((s) => s.user_id === userId)?.seat ?? null;
@@ -991,6 +1090,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
     sendState();
     sendAllHands(); // broadcast hands (jalur cepat)
     persistHands(); // simpan ke DB (persist)
+    schedule(runBotsTick, 400); // biar bot segera bid
   };
 
   // penentu pemenang trik sederhana
@@ -1005,6 +1105,18 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
     }
     return best.player;
   };
+
+  const runBots = useCallback(() => {
+    maybeRunBots({
+      hostState,
+      seats,
+      timersRef,
+      sendState,
+      sendHandToSeat,
+      trickWinner,
+      roomId,
+    });
+  }, [seats, roomId]); // hostState/timersRef pakai ref -> aman
 
   // akhiri ronde → hitung skor → next ronde / end game
   const finishRoundAndMaybeContinue = () => {
@@ -1044,6 +1156,8 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
       else {
         sendState();
         sendAllHands();
+        runBotsTick();
+        runBots();
       }
     };
 
@@ -1084,6 +1198,8 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
         hostState.current.publicState.targets = targets;
       }
       sendState();
+      runBots();
+      runBotsTick();
     };
 
     const onStartPlay = () => {
@@ -1093,6 +1209,8 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
       st.bidsRevealed = true;
       sendState();
       sendAllHands();
+      runBots();
+      runBotsTick();
     };
 
     const onPlayCard = async ({ payload }) => {
@@ -1146,6 +1264,15 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
       st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
       st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
+    // kabari semua bot ada kartu yang dimainkan (untuk update void map & agresi)
+    try {
+      const lead = st.leadSuit || suit;
+      [0,1,2,3].forEach(s => {
+        if (!isSeatBot(s)) return;
+        ensureBot(s).observePlay({ player: seat, card: cardFromId(cardId), leadSuit: lead });
+      });
+    } catch {}
+
       // persist removal ke DB hands (best-effort)
       try {
         const uid = userIdOfSeat(seat);
@@ -1167,10 +1294,21 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
 
         const t = setTimeout(() => {
           const win = trickWinner(st.table, st.trump, st.leadSuit);
+        // informasikan hasil trik ke bot
+        try {
+          const lead = st.leadSuit;
+          const plays = st.table.map(t => ({ player: t.player, card: cardFromId(t.card) }));
+          [0,1,2,3].forEach(s => {
+            if (!isSeatBot(s)) return;
+            ensureBot(s).observeTrick({ plays, winner: win, trump: st.trump, leadSuit: lead });
+          });
+        } catch {}
           st.tricksWon[win] += 1;
           st.table = [];
           st.leadSuit = null;
           st.currentPlayer = win;
+          sendState();
+          runBots(); // lanjutkan turn jika bot yang menang/berikutnya bot
 
           // kalau semua tangan habis → ronde selesai
           const sumHands = st.handSizes.reduce((a, b) => a + b, 0);
@@ -1180,6 +1318,8 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
             return;
           }
           sendState();
+          sendState();
+          runBotsTick();
         }, 600);
         timersRef.current.add(t);
         return;
@@ -1187,6 +1327,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
 
       sendState();
       sendHandToSeat(seat); // kirim tangan terbaru via broadcast
+      runBotsTick(); // kalau next player bot, dia langsung jalan
     };
 
     // pasang listeners
@@ -1204,3 +1345,4 @@ function useHostController(isHost, roomId, seats, chRef, timersRef) {
     };
   }, [isHost, seats, chRef]);
 }
+

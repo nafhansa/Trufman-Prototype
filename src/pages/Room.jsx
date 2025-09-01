@@ -4,10 +4,9 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { getUser } from "../lib/supabaseClient";
 import {
   fetchSeats, claimSeat, releaseSeat, fetchState, subscribeRoom,
-  startGame, endGame
-} from "../lib/rooms";
-import { joinRoomPresence } from "../lib/presence";
-
+  startGame, endGame,
+  addBotToSeat, removeBotByUserId, isBotUserId, isBotRow
+} from "../lib/rooms"; // <-- pastikan impor dari lib/rooms
 
 const SeatName = ["P1", "P2", "P3", "P4"];
 
@@ -63,6 +62,7 @@ export default function Room() {
     let ctrl;
     (async () => {
       const u = await getUser();
+      const { joinRoomPresence } = await import("../lib/presence");
       ctrl = await joinRoomPresence(
         roomId,
         { display_name: displayNameFromUser(u), seat: null },
@@ -94,18 +94,27 @@ export default function Room() {
     }
   }
 
+  async function onAddBot(i) {
+    try { await addBotToSeat(roomId, i); }
+    catch (e) { alert(e.message || "Gagal add bot"); }
+  }
+  async function onRemoveBot(userId) {
+    try { await removeBotByUserId(roomId, userId); }
+    catch (e) { alert(e.message || "Gagal remove bot"); }
+  }
+
   const takenBy   = (i) => seats.find((s) => s.seat === i);
   const isTaken   = (i) => !!takenBy(i);
   const isWaiting = state?.status === "waiting";
   const isHost    = me?.id && state?.created_by === me.id;
 
-  // hanya host yang bisa start; wajib 4 kursi terisi
+  // hanya host yang bisa start; wajib 4 kursi terisi (termasuk bot)
   const canStart  = isHost && isWaiting && seats.length === 4;
 
   const handleStart = async () => {
     try {
-      await startGame(roomId);          // update status -> playing
-      navigate(`/play/${roomId}`);      // host langsung pindah
+      await startGame(roomId);
+      navigate(`/play/${roomId}`);
     } catch (e) {
       alert(e.message || "Gagal memulai game");
     }
@@ -161,13 +170,14 @@ export default function Room() {
               {[0,1,2,3].map((i) => {
                 const t = takenBy(i);
                 const mine = t?.user_id === me?.id;
+                const isBot = !!t && (isBotRow(t) || isBotUserId(t.user_id));
                 return (
                   <div key={i} className="rounded-xl border border-zinc-700 bg-zinc-800/60 p-4">
                     <div className="flex items-center justify-between">
                       <div className="font-semibold">{SeatName[i]}</div>
                       {t ? (
                         <span className="text-xs bg-zinc-700 px-2 py-0.5 rounded">
-                          {t.display_name}{mine && " (you)"}
+                          {t.display_name}{isBot ? " (Bot)" : ""}{mine && " (you)"}
                         </span>
                       ) : (
                         <span className="text-xs opacity-60">Empty</span>
@@ -188,6 +198,24 @@ export default function Room() {
                       >
                         Release
                       </button>
+
+                      {/* Bot controls */}
+                      {isHost && isWaiting && !t && (
+                        <button
+                          onClick={() => onAddBot(i)}
+                          className="px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500"
+                        >
+                          Add Bot
+                        </button>
+                      )}
+                      {isHost && isWaiting && isBot && (
+                        <button
+                          onClick={() => onRemoveBot(t.user_id)}
+                          className="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600"
+                        >
+                          Remove Bot
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

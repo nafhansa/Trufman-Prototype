@@ -1,4 +1,318 @@
-// bots/learningBot.js
+// src/bots/learningBot.js
+import { supabase } from "../lib/supabaseClient";
+
+/* =========================================================
+ * Util untuk identitas BOT + helper DB seat
+ * =======================================================*/
+export const isBotUserId = (rowOrId, displayName) => {
+  // fleksibel: boleh string id saja, atau langsung row { user_id, display_name }
+  const id   = typeof rowOrId === "object" ? rowOrId?.user_id     : rowOrId;
+  const name = typeof rowOrId === "object" ? rowOrId?.display_name: displayName;
+  // kompat lama (kalau dulu pernah pakai "bot:..."):
+  if (typeof id === "string" && id.startsWith("bot:")) return true;
+  // cara baru: label nama
+  return typeof name === "string" && /^bot\b/i.test(name);
+};
+
+const newUuid = () =>
+  (globalThis.crypto?.randomUUID?.()) ||
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+
+export async function addBotToSeat(roomId, seat) {
+  const botUuid = newUuid(); // <-- valid UUID
+  const { error } = await supabase.from("room_seats").insert({
+    room_id: roomId,
+    seat,
+    user_id: botUuid,
+    display_name: `Bot ${seat + 1}`,   // penanda bot persisten
+  });
+  if (error) throw error;
+  return botUuid;
+}
+
+export async function removeBotByUserId(roomId, userId) {
+  const { error } = await supabase
+    .from("room_seats")
+    .delete()
+    .match({ room_id: roomId, user_id: userId });
+  if (error) throw error;
+}
+
+/* =========================================================
+ * Konstanta suit untuk state() yang dibaca bot
+ * (ikon dipakai untuk label internal saja)
+ * =======================================================*/
+const SUITS = [
+  { key: "C", label: "Clover", icon: "♣" },
+  { key: "D", label: "Diamond", icon: "♦" },
+  { key: "H", label: "Heart", icon: "♥" },
+  { key: "S", label: "Spade", icon: "♠" },
+];
+const suitIcon = (s) => SUITS.find((x) => x.key === s)?.icon || "?";
+const suitOrder = { C: 0, D: 1, H: 2, S: 3 };
+
+/* =========================================================
+ * Adapter id kartu (Game ↔︎ Bot)
+ * Game: "A"|"K"|"Q"|"J"|"T"|2..10 + suit (contoh: "AS", "7D", "TC")
+ * Bot : suit + rankAngka (contoh: "S14", "D7", "C10")
+ * =======================================================*/
+function gameIdToParts(id) {
+  const s = id.slice(-1).toUpperCase();
+  const rRaw = id.slice(0, -1).toUpperCase();
+  const rank =
+    rRaw === "A"
+      ? 14
+      : rRaw === "K"
+      ? 13
+      : rRaw === "Q"
+      ? 12
+      : rRaw === "J"
+      ? 11
+      : rRaw === "T"
+      ? 10
+      : Number(rRaw);
+  return { suit: s, rank };
+}
+function partsToGameId({ suit, rank }) {
+  const label =
+    rank === 14 ? "A" : rank === 13 ? "K" : rank === 12 ? "Q" : rank === 11 ? "J" : rank === 10 ? "T" : String(rank);
+  return `${label}${suit}`;
+}
+function toBotCardObj(gameId) {
+  const { suit, rank } = gameIdToParts(gameId);
+  return {
+    id: `${suit}${rank}`,
+    suit,
+    rank,
+    label: `${rankLabel(rank)}${suitIcon(suit)}`,
+    suitIcon: suitIcon(suit),
+  };
+}
+function fromBotCardObj(botCard) {
+  // botCard.id seperti "S14"
+  const suit = botCard.suit ?? botCard.id.slice(0, 1);
+  const rank = botCard.rank ?? Number(botCard.id.slice(1));
+  return partsToGameId({ suit, rank });
+}
+const rankLabel = (r) => (r <= 10 ? String(r) : ({ 11: "J", 12: "Q", 13: "K", 14: "A" }[r]));
+
+/* =========================================================
+ * Pool instance bot per room/seat
+ * =======================================================*/
+const botPool = new Map();
+function keyOf(roomId, seat) {
+  return `${roomId ?? "_"}:${seat}`;
+}
+function ensureBot({ roomId, seat, getState }) {
+  const k = keyOf(roomId, seat);
+  let bot = botPool.get(k);
+  if (!bot) {
+    bot = createLearningBot({ seat, getState, mcRollouts: 200 });
+    botPool.set(k, bot);
+  } else {
+    bot.setSeat(seat);
+  }
+  return bot;
+}
+
+/* =========================================================
+ * maybeRunBots:
+ * Dipanggil hanya di sisi HOST (di hook controller host)
+ * - Auto-bid untuk kursi bot saat phase "bidding"
+ * - Auto-play kartu saat phase "play" dan giliran bot
+ * Arg:
+ * { hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId? }
+ * =======================================================*/
+export function maybeRunBots({
+  hostState,
+  seats,
+  timersRef,
+  sendState,
+  sendHandToSeat,
+  trickWinner,
+  roomId = "room",
+}) {
+  const st = hostState?.current?.publicState;
+  if (!st) return;
+
+  const seatRow   = (seat) => seats.find((s) => s.seat === seat);
+  const isBotSeat = (seat) => isBotUserId(seatRow(seat)?.user_id);
+  const schedule  = (fn, ms = 120) => {
+    const t = setTimeout(fn, ms);
+    try { timersRef?.current?.add?.(t); } catch {}
+  };
+
+  // Minimal SUITS utk bot.getState
+  const SUITS = [
+    { key: "C", icon: "♣" },
+    { key: "D", icon: "♦" },
+    { key: "H", icon: "♥" },
+    { key: "S", icon: "♠" },
+  ];
+  const getState = () => ({ SUITS, trump: st.trump, bids: st?.bids || [] });
+
+  /* ==================== BIDDING ==================== */
+  if (st.phase === "bidding") {
+    // cari bot yang belum bid
+    const nextBotSeat = [0,1,2,3].find((i) => isBotSeat(i) && !st.bids[i]);
+    if (nextBotSeat == null) return; // semua bid sudah masuk / tidak ada bot
+
+    const bot     = ensureBot({ roomId, seat: nextBotSeat, getState });
+    const handIds = hostState.current.hands?.[nextBotSeat] || [];
+    const hand    = handIds.map(toBotCardObj);
+
+    schedule(() => {
+      const bid = bot.chooseBid(hand);              // { suit, rank, count }
+      st.bids[nextBotSeat] = {                      // tulis bid bot
+        suit: bid.suit,
+        rank: bid.rank,
+        count: bid.count,
+      };
+
+      // jika semua bid masuk → finalize trump/mode/targets
+      if (st.bids.every(Boolean)) {
+        let bestIdx = 0;
+        for (let i = 1; i < 4; i++) {
+          const bi = st.bids[i], bb = st.bids[bestIdx];
+          if (bi.rank > bb.rank || (bi.rank === bb.rank && suitOrder[bi.suit] > suitOrder[bb.suit])) bestIdx = i;
+        }
+        st.trump   = st.bids[bestIdx].suit;
+        const sum  = st.bids.reduce((a, x) => a + (x?.count || 0), 0);
+        const mode = sum >= 13 ? "ATAS" : "BAWAH";
+        st.mode    = mode;
+        st.targets = st.bids.map((x) => (mode === "ATAS" ? x.count + 1 : Math.max(0, x.count - 1)));
+      }
+
+      sendState();
+
+      // <- penting: panggil lagi supaya bot lain ikut bid
+      schedule(() => maybeRunBots({
+        hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+      }), 60);
+    });
+
+    return;
+  }
+
+  /* ==================== PLAY ==================== */
+  if (st.phase !== "play") return;
+
+  const seat = st.currentPlayer;
+  if (!isBotSeat(seat)) return;
+
+  const bot     = ensureBot({ roomId, seat, getState });
+  const handIds = hostState.current.hands?.[seat] || [];
+  if (!handIds.length) return;
+
+  schedule(() => {
+    const hand        = handIds.map(toBotCardObj);
+    const leadSuit    = st.leadSuit;
+    const trump       = st.trump;
+    const pos         = st.table.length;
+    const need        = (st.targets?.[seat] ?? 0) - (st.tricksWon?.[seat] ?? 0);
+    const table       = (st.table || []).map((pl) => ({ player: pl.player, card: toBotCardObj(pl.card) }));
+    const trumpBroken = !!st.trumpBroken;
+    const handCounts  = st.handSizes?.slice?.() || [13,13,13,13];
+
+    const picked = bot.pickCard({
+      hand, leadSuit, trump, table, seen: [], voidMap: null,
+      need, pos, mode: st.mode, seat, handCounts, trumpBroken,
+    });
+
+    const chosen       = picked || hand[0];
+    const chosenGameId = fromBotCardObj(chosen);
+    const idx          = hostState.current.hands[seat].indexOf(chosenGameId);
+    if (idx < 0) return;
+
+    const chosenSuit = gameIdToParts(chosenGameId).suit;
+
+    // mirror validasi host onPlayCard (lead & follow suit)
+    if (st.table.length === 0) {
+      if (chosenSuit === st.trump && !st.trumpBroken) {
+        const hasNonTrump = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit !== st.trump);
+        if (hasNonTrump) {
+          const alt = hostState.current.hands[seat]
+            .filter((id) => gameIdToParts(id).suit !== st.trump)
+            .map((id) => ({ id, ...gameIdToParts(id) }))
+            .sort((a,b)=>a.rank-b.rank)[0];
+          const altId = alt ? alt.id : chosenGameId;
+          const altSuit = alt ? alt.suit : chosenSuit;
+          const k = hostState.current.hands[seat].indexOf(altId);
+          if (k >= 0) hostState.current.hands[seat].splice(k, 1);
+          st.leadSuit = altSuit;
+          if (altSuit === st.trump) st.trumpBroken = true;
+          st.table.push({ player: seat, card: altId, hidden: altSuit === st.trump });
+        } else {
+          st.trumpBroken = true;
+          st.leadSuit = chosenSuit;
+          hostState.current.hands[seat].splice(idx, 1);
+          st.table.push({ player: seat, card: chosenGameId, hidden: true });
+        }
+      } else {
+        st.leadSuit = chosenSuit;
+        hostState.current.hands[seat].splice(idx, 1);
+        st.table.push({ player: seat, card: chosenGameId, hidden: false });
+      }
+    } else {
+      const hasLead = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit === st.leadSuit);
+      let finalId = chosenGameId, finalSuit = chosenSuit;
+
+      if (hasLead && chosenSuit !== st.leadSuit) {
+        const followMin = hostState.current.hands[seat]
+          .filter((id) => gameIdToParts(id).suit === st.leadSuit)
+          .map((id) => ({ id, ...gameIdToParts(id) }))
+          .sort((a,b)=>a.rank-b.rank)[0];
+        if (followMin) { finalId = followMin.id; finalSuit = followMin.suit; }
+      } else if (chosenSuit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) {
+        st.trumpBroken = true;
+      }
+
+      const k = hostState.current.hands[seat].indexOf(finalId);
+      if (k >= 0) hostState.current.hands[seat].splice(k, 1);
+      st.table.push({ player: seat, card: finalId, hidden: finalSuit === st.trump });
+    }
+
+    st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
+    st.currentPlayer = (st.currentPlayer + 1) % 4;
+    sendState();
+    sendHandToSeat(seat);
+
+    if (st.table.length === 4) {
+      schedule(() => {
+        st.table = st.table.map((t) => ({ ...t, hidden: false }));
+        sendState();
+
+        schedule(() => {
+          const win = trickWinner(st.table, st.trump, st.leadSuit);
+          st.tricksWon[win] = (st.tricksWon[win] || 0) + 1;
+          st.table = [];
+          st.leadSuit = null;
+          st.currentPlayer = win;
+          sendState();
+
+          // lanjutkan lagi kalau next player bot
+          schedule(() => maybeRunBots({
+            hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+          }), 80);
+        }, 280);
+      }, 200);
+    } else {
+      // meja belum penuh → coba jalanin bot berikutnya kalau bot juga
+      schedule(() => maybeRunBots({
+        hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+      }), 80);
+    }
+  });
+}
+
+/* =========================================================
+ * ======================= BOT ENGINE ======================
+ * (KODE MILIKMU — TIDAK DIUBAH)
+ * =======================================================*/
+
 export function createLearningBot({
   seat = 1,
   getState = () => ({}),
