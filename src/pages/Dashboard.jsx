@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
@@ -27,11 +28,6 @@ export default function Dashboard() {
   const [newPw2, setNewPw2] = useState("");
   const [savingPw, setSavingPw] = useState(false);
   const [pwMsg, setPwMsg] = useState("");
-
-  // upgrade akun (untuk user tanpa email)
-  const [upgradeEmail, setUpgradeEmail] = useState("");
-  const [upgradePw, setUpgradePw] = useState("");
-  const [upMsg, setUpMsg] = useState("");
 
   // change email
   const [newEmail, setNewEmail] = useState("");
@@ -65,6 +61,19 @@ export default function Dashboard() {
     [user]
   );
   const usesEmailPassword = providers.includes("email");
+
+  // --- notifikasi & state kirim reset
+  const [sendingReset, setSendingReset] = useState(false);
+  const [toast, setToast] = useState({ show: false, type: "success", text: "" });
+  const notify = (type, text) => {
+    setToast({ show: true, type, text });
+    setTimeout(() => setToast(s => ({ ...s, show: false })), 4000);
+  };
+  const maskEmail = (e) => {
+    if (!e) return "";
+    const [u, d] = e.split("@");
+    return (u?.slice(0, 2) || "") + "****@" + d;
+  };
 
   async function saveProfile() {
     setProfileMsg("");
@@ -137,6 +146,7 @@ export default function Dashboard() {
 
   async function sendResetLink() {
     setPwMsg("");
+    setSendingReset(true);
     try {
       const { data: { user: curUser } } = await supabase.auth.getUser();
       if (!curUser?.email) throw new Error("Email akun tidak ditemukan.");
@@ -144,30 +154,18 @@ export default function Dashboard() {
         redirectTo: `${location.origin}/reset-password`
       });
       if (error) throw error;
-      setPwMsg("Link reset dikirim ke email.");
+      const ok = `Link reset dikirim ke ${maskEmail(curUser.email)}. Cek inbox/spam lalu klik tautannya.`;
+      setPwMsg(ok);
+      notify("success", ok);
     } catch (e) {
-      setPwMsg(e.message || "Gagal mengirim link reset.");
+      const msg = e?.message?.includes("rate")
+        ? "Terlalu sering mengirim. Coba lagi beberapa menit."
+        : (e.message || "Gagal mengirim link reset.");
+      setPwMsg(msg);
+      notify("error", msg);
     } finally {
+      setSendingReset(false);
       setTimeout(() => setPwMsg(""), 4000);
-    }
-  }
-
-  async function upgradeAccount() {
-    setUpMsg("");
-    try {
-      if (!upgradeEmail.includes("@")) throw new Error("Masukkan email yang valid.");
-      if (upgradePw.length < 8) throw new Error("Password minimal 8 karakter.");
-      const { error } = await supabase.auth.updateUser({
-        email: upgradeEmail,
-        password: upgradePw,
-      });
-      if (error) throw error;
-      setUpMsg("Cek email untuk verifikasi. Setelah verifikasi, akun punya recovery.");
-      setUpgradeEmail(""); setUpgradePw("");
-    } catch (e) {
-      setUpMsg(e.message || "Gagal upgrade akun.");
-    } finally {
-      setTimeout(() => setUpMsg(""), 5000);
     }
   }
 
@@ -265,7 +263,7 @@ export default function Dashboard() {
             <p className="text-xs text-stone-400 mb-3">
               {usesEmailPassword
                 ? "Wajib isi password lama sebelum mengganti."
-                : "Akun OAuth/guest tidak punya password lama. Kamu bisa menambahkan email + password di bawah agar punya recovery."}
+                : "Akun OAuth/guest tidak punya password lama. Jika ingin menambahkan password, kirim tautan reset di bawah."}
             </p>
 
             {usesEmailPassword && (
@@ -309,42 +307,36 @@ export default function Dashboard() {
                   <button
                     type="button"
                     onClick={sendResetLink}
-                    className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-900 font-semibold"
+                    disabled={sendingReset}
+                    className={`px-3 py-2 rounded-xl font-semibold text-stone-900
+                      ${sendingReset ? "bg-amber-600/70 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500"}`}
                     title="Kirim tautan reset ke email akun"
                   >
-                    Lupa password?
+                    {sendingReset ? "Mengirim..." : "Lupa password?"}
                   </button>
                 )}
               </div>
               {pwMsg && <div className="text-sm">{pwMsg}</div>}
             </div>
 
-            {/* Upgrade Akun (untuk user tanpa email/password) */}
+            {/* Lupa Password (untuk user tanpa email/password) */}
             {!usesEmailPassword && (
               <div className="mt-4 border-t border-zinc-700 pt-3">
-                <h3 className="font-semibold mb-2">Tambah Recovery Email</h3>
-                <p className="text-xs text-stone-400 mb-2">
-                  Tambahkan email + password agar bisa reset sendiri jika lupa.
+                <h3 className="font-semibold mb-2">Lupa Password</h3>
+                <p className="text-xs text-stone-400 mb-3">
+                  Kirim tautan reset ke email akun ini. Setelah set password, kamu juga bisa login pakai email+password.
                 </p>
-                <input
-                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700"
-                  placeholder="email@contoh.com"
-                  value={upgradeEmail} onChange={(e)=>setUpgradeEmail(e.target.value)}
-                  type="email"
-                />
-                <input
-                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700"
-                  placeholder="Password baru (min. 8)"
-                  value={upgradePw} onChange={(e)=>setUpgradePw(e.target.value)}
-                  type="password"
-                />
                 <button
-                  onClick={upgradeAccount}
-                  className="px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-semibold"
+                  type="button"
+                  onClick={sendResetLink}
+                  disabled={sendingReset}
+                  className={`px-3 py-2 rounded-xl font-semibold text-stone-900
+                    ${sendingReset ? "bg-amber-600/70 cursor-not-allowed" : "bg-amber-600 hover:bg-amber-500"}`}
+                  title="Kirim tautan reset ke email akun"
                 >
-                  Simpan & Kirim Verifikasi
+                  {sendingReset ? "Mengirim..." : "Kirim Link Reset Password"}
                 </button>
-                {upMsg && <div className="mt-2 text-sm">{upMsg}</div>}
+                {pwMsg && <div className="mt-2 text-sm">{pwMsg}</div>}
               </div>
             )}
           </section>
@@ -385,7 +377,7 @@ export default function Dashboard() {
               <button
                 onClick={changeEmail}
                 disabled={savingEmail}
-                className="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-600 text-white font-bold disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold disabled:opacity-50"
               >
                 {savingEmail ? "Mengirim..." : "Kirim Link Ganti Email"}
               </button>
@@ -406,6 +398,18 @@ export default function Dashboard() {
           </div>
         </section>
       </div>
+
+      {/* Toast */}
+      {toast.show && (
+        <div
+          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg border text-sm
+           ${toast.type === "success"
+             ? "bg-emerald-600/90 border-emerald-500 text-white"
+             : "bg-red-600/90 border-red-500 text-white"}`}
+        >
+          {toast.text}
+        </div>
+      )}
     </div>
   );
 }
