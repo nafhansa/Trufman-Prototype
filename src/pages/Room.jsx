@@ -19,9 +19,38 @@ function displayNameFromUser(u) {
   );
 }
 
+async function copyText(text) {
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  return ok;
+}
+
 export default function Room() {
   const { id: roomId } = useParams();
   const navigate = useNavigate();
+  const [copied, setCopied] = useState(false);
+ 
+  async function onCopyId() {
+    const ok = await copyText(String(roomId));
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } else {
+      alert(`Gagal menyalin. Room ID:\n${roomId}`);
+    }
+  }
 
   const [seats, setSeats]   = useState([]);
   const [state, setState]   = useState(null);
@@ -157,8 +186,15 @@ export default function Room() {
           </div>
         </div>
 
-        <div className="mt-1 text-xs opacity-70 break-all">
-          Room ID: <code>{roomId}</code> • Status: <code>{state?.status || "-"}</code>
+        <div className="flex items-center gap-2 text-sm text-stone-300">
+          <span>Room ID: <code>{roomId}</code></span>
+          <button
+            onClick={onCopyId}
+            className="px-2 py-1 rounded-md bg-zinc-700 hover:bg-zinc-600 text-stone-100 border border-zinc-600"
+            title="Copy Room ID"
+            >
+            {copied ? "Copied!" : "Copy ID"}
+          </button>
         </div>
 
         {err && <div className="mt-3 text-sm text-red-400">{err}</div>}
