@@ -1,142 +1,136 @@
 // src/lib/auth.js
 import { supabase } from "./supabaseClient";
 
-/** Domain dummy untuk username-only. Hindari .local — pakai .test */
-export const USERNAME_DOMAIN = "trufman.test";
+/* ============== Helpers umum ============== */
 
-/* ==================== Helpers ==================== */
-
-/** Normalize username: huruf kecil + hanya [a-z0-9._-], panjang 3–30 */
 export function normalizeUsername(raw) {
   const s = String(raw || "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "_") // non-allowed -> _
-    .replace(/_+/g, "_");          // merge underscores
+    .replace(/[^a-z0-9._-]/g, "_")
+    .replace(/_+/g, "_");
   return s;
 }
 
 export function validateUsername(u) {
-  return /^[a-z0-9._-]{3,30}$/.test(u);
+  return /^[a-z0-9._-]{3,30}$/.test(u || "");
 }
 
-/** Terima login (username atau email) → selalu kembalikan email */
-export function loginIdToEmail(login) {
-  if (!login) return "";
-  const s = String(login).trim();
-  return s.includes("@") ? s : `${normalizeUsername(s)}@${USERNAME_DOMAIN}`;
+/** pastikan row profiles ada untuk user.id. kalau belum, buat. */
+export async function ensureProfile(user, { username, display_name } = {}) {
+  if (!user) return;
+
+  const { data: p, error } = await supabase
+    .from("profiles")
+    .select("id, username")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) return;
+
+  if (!p) {
+    const base = normalizeUsername(
+      username ||
+      user.user_metadata?.username ||
+      user.user_metadata?.login_id ||
+      (user.email || "").split("@")[0] ||
+      `user_${user.id.slice(0, 6)}`
+    ).slice(0, 30) || `user_${user.id.slice(0, 6)}`;
+
+    const uname = await reserveUsername(base);
+    await supabase.from("profiles").insert({
+      id: user.id,
+      username: uname,
+      display_name:
+        display_name ||
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        uname,
+    });
+  }
 }
 
-/** Mapping pesan error Supabase jadi human friendly */
-function mapSupabaseError(error) {
-  if (!error) return null;
-  const msg = String(error.message || error.error_description || error.toString());
-  if (/(duplicate key|unique constraint|Already registered)/i.test(msg)) return "Username sudah dipakai.";
-  if (/invalid login credentials/i.test(msg)) return "Username/Password salah.";
-  if (/email not confirmed/i.test(msg)) return "Email belum dikonfirmasi.";
-  return msg;
+/** ambil username unik; kalau sudah ada, tambah suffix -1, -2, dst */
+async function reserveUsername(base) {
+  const root = normalizeUsername(base) || "user";
+  let uname = root;
+  let n = 0;
+  // hindari loop panjang; batas 50 percobaan sudah sangat cukup
+  // (atau ganti ke random suffix kalau mau)
+  while (n < 50) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("username", uname)
+      .limit(1);
+    if (!data?.length) return uname;
+    n += 1;
+    uname = `${root}-${n}`;
+  }
+  return `${root}-${crypto.randomUUID().slice(0, 6)}`;
 }
 
-/* ==================== Auth APIs ==================== */
+/* ============== Jalur login/register ============== */
 
-/**
- * Register (username-only atau email). 
- * CATATAN:
- * - Jika Email Confirmations OFF di Dashboard, signUp mengembalikan `session`
- *   sehingga user langsung login.
- * - Kalau ON, tidak ada session; pembuatan baris `profiles` ditangani oleh
- *   trigger SQL `handle_new_user` (lihat skrip SQL yang sudah dikirim).
- */
-export async function signUpUsername({ username, password, fullName }) {
+/** 1) Guest (anonymous) — tanpa email */
+export async function signInGuestUsername({ username, fullName }) {
   const uname = normalizeUsername(username);
   if (!validateUsername(uname)) {
-    return { data: null, error: new Error("Username harus 3–30, hanya huruf/angka/._-") };
+    return { data: null, error: new Error("Username 3–30, huruf/angka/._-") };
   }
 
-  const email = loginIdToEmail(uname);
+  // anonymous sign-in
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) return { data: null, error };
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName || uname,
-        login_id: uname,
-      },
-      // redirectTo: window.location.origin, // opsional jika pakai email confirm
-    },
-  });
-
-  if (error) return { data: null, error: new Error(mapSupabaseError(error)) };
-
-  // ⬇️ PATCH: Upsert profile dari client HANYA kalau ada session (email confirm OFF).
-  // Jika tidak ada session, biarkan trigger SQL yang memasukkan ke `public.profiles`.
-  if (data?.session && data?.user?.id) {
-    const { error: perr } = await supabase
-      .from("profiles")
-      .upsert(
-        { id: data.user.id, username: uname, display_name: fullName || uname },
-        { onConflict: "id" }
-      );
-    if (perr) return { data, error: new Error(mapSupabaseError(perr)) };
-  }
+  // buat/isi profiles
+  await ensureProfile(data.user, { username: uname, display_name: fullName });
 
   return { data, error: null };
 }
 
-/** Login pakai username ATAU email + password */
-export async function signInUsername({ login, password }) {
-  const email = loginIdToEmail(login);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  return error ? { data: null, error: new Error(mapSupabaseError(error)) } : { data, error: null };
-}
+/** 2) Email + Password (signup) */
+export async function signUpWithEmail({ email, password, fullName }) {
+  email = String(email || "").trim().toLowerCase();
+  if (!email.includes("@")) return { data: null, error: new Error("Email tidak valid") };
+  if ((password || "").length < 8) return { data: null, error: new Error("Password min. 8") };
 
-/** OAuth Google */
-export async function signInWithGoogle() {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: window.location.origin, // atau origin + '/auth/callback' jika perlu
-    },
+  const { data, error } = await supabase.auth.signUp({
+    email, password,
+    options: { data: { full_name: fullName || "" } }
   });
-  return error ? { data: null, error: new Error(mapSupabaseError(error)) } : { data, error: null };
+  if (error) return { data: null, error };
+
+  // jika Email Confirmations OFF → user langsung ada
+  if (data.user) await ensureProfile(data.user);
+  return { data, error: null };
 }
 
-/** Logout */
+/** 3) Email + Password (login) */
+export async function signInWithEmail({ email, password }) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (!error && data?.user) await ensureProfile(data.user);
+  return { data, error };
+}
+
+/** 4) OAuth (Google, dsb) */
+export async function signInWithOAuth(provider = "google") {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: `${location.origin}/` }
+  });
+  return { data, error };
+}
+
+/** logout */
 export async function signOut() {
   await supabase.auth.signOut();
 }
 
-/** Ambil user aktif (dari session) */
-export async function getUser() {
-  const { data } = await supabase.auth.getUser();
-  return data?.user ?? null;
-}
-
-/**
- * Pastikan baris profile ada setelah login (terutama OAuth).
- * Aman dipanggil kapan saja; jika sudah ada, tidak apa-apa.
- */
-export async function ensureProfileFromSession() {
-  const user = await getUser();
-  if (!user?.id) return;
-
-  // sudah ada?
-  const { data: p, error: gerr } = await supabase
-    .from("profiles")
-    .select("id, username, display_name")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (gerr) return; // diamkan; tidak memblokir UI
-
-  if (!p) {
-    const local = (user.email || "").split("@")[0] || "user";
-    const uname = (normalizeUsername(user.user_metadata?.login_id || local).slice(0, 30)) || `user_${user.id.slice(0, 6)}`;
-    await supabase.from("profiles").insert({
-      id: user.id,
-      username: uname,
-      display_name: user.user_metadata?.full_name || user.user_metadata?.name || uname,
-    });
-  }
+/** upgrade guest/OAuth → tambah email+password */
+export async function linkEmailPassword({ email, password }) {
+  email = String(email || "").trim().toLowerCase();
+  if (!email.includes("@")) return { error: new Error("Email tidak valid") };
+  if ((password || "").length < 8) return { error: new Error("Password min. 8") };
+  const { error } = await supabase.auth.updateUser({ email, password });
+  return { error };
 }

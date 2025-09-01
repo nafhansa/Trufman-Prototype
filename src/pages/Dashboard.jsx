@@ -21,13 +21,23 @@ export default function Dashboard() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
 
-  // password
+  // password (ubah)
+  const [currentPw, setCurrentPw] = useState(""); // password lama (hanya untuk email/password)
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
   const [savingPw, setSavingPw] = useState(false);
   const [pwMsg, setPwMsg] = useState("");
 
-  const providers = useMemo(() => user?.identities?.map(i => i.provider) || [], [user]);
+  // upgrade akun (untuk user tanpa email)
+  const [upgradeEmail, setUpgradeEmail] = useState("");
+  const [upgradePw, setUpgradePw] = useState("");
+  const [upMsg, setUpMsg] = useState("");
+
+  // change email
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPw, setEmailPw] = useState(""); // konfirmasi password saat ganti email (untuk email/password)
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailMsg, setEmailMsg] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -49,6 +59,12 @@ export default function Dashboard() {
     })();
     return () => { alive = false; };
   }, [nav]);
+
+  const providers = useMemo(
+    () => user?.identities?.map(i => i.provider) || [],
+    [user]
+  );
+  const usesEmailPassword = providers.includes("email");
 
   async function saveProfile() {
     setProfileMsg("");
@@ -93,15 +109,100 @@ export default function Dashboard() {
 
     setSavingPw(true);
     try {
+      const { data: { user: curUser } } = await supabase.auth.getUser();
+      if (!curUser) throw new Error("Belum login.");
+
+      // wajib re-auth kalau akun email/password
+      if (usesEmailPassword) {
+        if (!currentPw) throw new Error("Masukkan password lama.");
+        const { error: signErr } = await supabase.auth.signInWithPassword({
+          email: curUser.email,
+          password: currentPw,
+        });
+        if (signErr) throw new Error("Password lama salah.");
+      }
+
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
+
       setPwMsg("Password diubah ✔");
-      setNewPw(""); setNewPw2("");
+      setCurrentPw(""); setNewPw(""); setNewPw2("");
     } catch (e) {
       setPwMsg(e.message || "Gagal mengubah password.");
     } finally {
       setSavingPw(false);
       setTimeout(() => setPwMsg(""), 2500);
+    }
+  }
+
+  async function sendResetLink() {
+    setPwMsg("");
+    try {
+      const { data: { user: curUser } } = await supabase.auth.getUser();
+      if (!curUser?.email) throw new Error("Email akun tidak ditemukan.");
+      const { error } = await supabase.auth.resetPasswordForEmail(curUser.email, {
+        redirectTo: `${location.origin}/reset-password`
+      });
+      if (error) throw error;
+      setPwMsg("Link reset dikirim ke email.");
+    } catch (e) {
+      setPwMsg(e.message || "Gagal mengirim link reset.");
+    } finally {
+      setTimeout(() => setPwMsg(""), 4000);
+    }
+  }
+
+  async function upgradeAccount() {
+    setUpMsg("");
+    try {
+      if (!upgradeEmail.includes("@")) throw new Error("Masukkan email yang valid.");
+      if (upgradePw.length < 8) throw new Error("Password minimal 8 karakter.");
+      const { error } = await supabase.auth.updateUser({
+        email: upgradeEmail,
+        password: upgradePw,
+      });
+      if (error) throw error;
+      setUpMsg("Cek email untuk verifikasi. Setelah verifikasi, akun punya recovery.");
+      setUpgradeEmail(""); setUpgradePw("");
+    } catch (e) {
+      setUpMsg(e.message || "Gagal upgrade akun.");
+    } finally {
+      setTimeout(() => setUpMsg(""), 5000);
+    }
+  }
+
+  async function changeEmail() {
+    setEmailMsg("");
+    const e = newEmail.trim().toLowerCase();
+    if (!e || !e.includes("@")) return setEmailMsg("Masukkan email baru yang valid.");
+    if (e === (user.email || "").toLowerCase())
+      return setEmailMsg("Email baru sama dengan email sekarang.");
+
+    setSavingEmail(true);
+    try {
+      const { data: { user: curUser } } = await supabase.auth.getUser();
+      if (!curUser) throw new Error("Belum login.");
+
+      if (usesEmailPassword) {
+        if (!emailPw) throw new Error("Masukkan password akun untuk konfirmasi.");
+        const { error: signErr } = await supabase.auth.signInWithPassword({
+          email: curUser.email,
+          password: emailPw,
+        });
+        if (signErr) throw new Error("Password salah.");
+      }
+
+      // Kirim link verifikasi ke email baru; email akan berpindah setelah dikonfirmasi.
+      const { error } = await supabase.auth.updateUser({ email: e });
+      if (error) throw error;
+
+      setEmailMsg("Link verifikasi sudah dikirim ke email baru. Selesaikan lewat email untuk mengganti.");
+      setNewEmail(""); setEmailPw("");
+    } catch (err) {
+      setEmailMsg(err.message || "Gagal mengganti email.");
+    } finally {
+      setSavingEmail(false);
+      setTimeout(() => setEmailMsg(""), 6000);
     }
   }
 
@@ -128,6 +229,7 @@ export default function Dashboard() {
         </header>
 
         <div className="grid md:grid-cols-2 gap-4">
+          {/* =================== Profil =================== */}
           <section className="bg-zinc-800 rounded-xl shadow p-4 border border-zinc-700">
             <h2 className="font-semibold text-stone-100 mb-2">Profil</h2>
 
@@ -157,13 +259,26 @@ export default function Dashboard() {
             </div>
           </section>
 
+          {/* =================== Ganti Password =================== */}
           <section className="bg-zinc-800 rounded-xl shadow p-4 border border-zinc-700">
             <h2 className="font-semibold text-stone-100 mb-2">Ganti Password</h2>
             <p className="text-xs text-stone-400 mb-3">
-              {providers.includes("google")
-                ? "Akunmu terhubung Google. Password opsional (hanya jika ingin juga login email/password)."
-                : "Ubah password untuk login email/password."}
+              {usesEmailPassword
+                ? "Wajib isi password lama sebelum mengganti."
+                : "Akun OAuth/guest tidak punya password lama. Kamu bisa menambahkan email + password di bawah agar punya recovery."}
             </p>
+
+            {usesEmailPassword && (
+              <>
+                <label className="text-sm block mb-1 text-stone-300">Password Lama</label>
+                <input
+                  type="password"
+                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-stone-100"
+                  value={currentPw} onChange={(e) => setCurrentPw(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </>
+            )}
 
             <label className="text-sm block mb-1 text-stone-300">Password Baru</label>
             <input
@@ -181,19 +296,105 @@ export default function Dashboard() {
               placeholder="ketik ulang"
             />
 
-            <div className="flex items-center justify-between gap-2">
-              <button
-                onClick={savePassword}
-                disabled={savingPw}
-                className="px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-stone-100 font-bold disabled:opacity-50"
-              >
-                {savingPw ? "Menyimpan..." : "Simpan Password"}
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={savePassword}
+                  disabled={savingPw}
+                  className="px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-stone-100 font-bold disabled:opacity-50"
+                >
+                  {savingPw ? "Menyimpan..." : "Simpan Password"}
+                </button>
+                {usesEmailPassword && (
+                  <button
+                    type="button"
+                    onClick={sendResetLink}
+                    className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-900 font-semibold"
+                    title="Kirim tautan reset ke email akun"
+                  >
+                    Lupa password?
+                  </button>
+                )}
+              </div>
               {pwMsg && <div className="text-sm">{pwMsg}</div>}
             </div>
+
+            {/* Upgrade Akun (untuk user tanpa email/password) */}
+            {!usesEmailPassword && (
+              <div className="mt-4 border-t border-zinc-700 pt-3">
+                <h3 className="font-semibold mb-2">Tambah Recovery Email</h3>
+                <p className="text-xs text-stone-400 mb-2">
+                  Tambahkan email + password agar bisa reset sendiri jika lupa.
+                </p>
+                <input
+                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700"
+                  placeholder="email@contoh.com"
+                  value={upgradeEmail} onChange={(e)=>setUpgradeEmail(e.target.value)}
+                  type="email"
+                />
+                <input
+                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700"
+                  placeholder="Password baru (min. 8)"
+                  value={upgradePw} onChange={(e)=>setUpgradePw(e.target.value)}
+                  type="password"
+                />
+                <button
+                  onClick={upgradeAccount}
+                  className="px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-stone-900 font-semibold"
+                >
+                  Simpan & Kirim Verifikasi
+                </button>
+                {upMsg && <div className="mt-2 text-sm">{upMsg}</div>}
+              </div>
+            )}
           </section>
         </div>
 
+        {/* =================== Ganti Email =================== */}
+        {user.email && (
+          <section className="mt-4 bg-zinc-800 rounded-xl shadow p-4 border border-zinc-700">
+            <h2 className="font-semibold text-stone-100 mb-2">Ganti Email</h2>
+            <div className="text-sm text-stone-400 mb-3">
+              Email saat ini: <span className="text-stone-200">{user.email}</span><br/>
+              {usesEmailPassword
+                ? "Demi keamanan, masukkan password akun saat ini untuk konfirmasi."
+                : "Akun OAuth tidak perlu password. Kami akan kirim link verifikasi ke email baru."}
+            </div>
+
+            {usesEmailPassword && (
+              <>
+                <label className="text-sm block mb-1 text-stone-300">Password Akun</label>
+                <input
+                  type="password"
+                  className="w-full mb-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-stone-100"
+                  value={emailPw} onChange={(e)=>setEmailPw(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </>
+            )}
+
+            <label className="text-sm block mb-1 text-stone-300">Email Baru</label>
+            <input
+              type="email"
+              className="w-full mb-3 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-stone-100"
+              value={newEmail} onChange={(e)=>setNewEmail(e.target.value)}
+              placeholder="email-baru@contoh.com"
+            />
+
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={changeEmail}
+                disabled={savingEmail}
+                className="px-4 py-2 rounded-xl bg-blue-700 hover:bg-blue-600 text-white font-bold disabled:opacity-50"
+              >
+                {savingEmail ? "Mengirim..." : "Kirim Link Ganti Email"}
+              </button>
+              {emailMsg && <div className="text-sm">{emailMsg}</div>}
+            </div>
+          </section>
+        )}
+
+        {/* =================== Info akun =================== */}
         <section className="mt-4 bg-zinc-800 rounded-xl shadow p-4 border border-zinc-700">
           <h2 className="font-semibold text-stone-100 mb-2">Info Akun</h2>
           <div className="text-sm text-stone-300 space-y-1">
