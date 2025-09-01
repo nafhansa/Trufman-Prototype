@@ -1,12 +1,51 @@
-# React + Vite
+# Trufman — Trick-Taking Card Game with a Self-Learning Bot
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Trufman adalah game kartu kecil yang memamerkan product thinking, UI rapi, dan bot adaptif yang belajar dari permainan. Siklusnya lengkap: bidding → reveal → play → scoring, dengan trump dinamis, SFX, dan memori bot yang tersinkron ke cloud (Supabase).
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🎮 Cara Main (Singkat)
+- 4 pemain: kamu + 3 bot.
+- Bid 1 kartu (nilai 2–10 = angka, J/Q/K = 0, A = 1). Bid tertinggi menentukan trump (C < D < H < S).
+- Mode: ATAS jika total bid ≥ 13 (target = bid+1), BAWAH jika < 13 (target = bid−1, min 0).
+- Ikuti suit lead jika bisa; trump boleh dimainkan jika tidak bisa ikut suit atau setelah trump broken.
+- Skor: tepat target = +target; miss/over penalti tergantung mode.
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🧠 Tentang Bot
+Bot menyimpan weights (JSON) di Supabase per client_id + seat. Setelah tiap trick/round, weights di-adjust ringan berdasarkan hasil (bukan deep ML, tapi cukup membuat bot terasa “belajar”). Sinkronisasi dilakukan debounced untuk hemat write.
+
+
+## 🧰 Tech Stack
+- Frontend: React + Vite, Tailwind CSS
+-Data: Supabase (Postgres, RLS-ready)
+- Tabel: public.bot_memory(client_id text, seat smallint, data jsonb, updated_at timestamptz)
+- PK: (client_id, seat) + index bot_memory_client_seat_idx
+- Hosting: GitHub Pages + custom domain (CNAME → nafhansa.github.io)
+- SFX/Music: WAV/MP3 (web-safe, pendek)
+
+
+## HOW TO RUN IT??
+```bash
+git clone https://github.com/nafhansa/Trufman-Prototype.git
+cd Trufman-Prototype
+npm install
+
+### Buat file .env (Vite)
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
+
+### Jalankan dev server
+npm run dev
+
+### Build
+npm run build
+```
+
+## 🚀 Deploy
+- GitHub Pages dengan workflow standar atau folder /docs.
+- public/CNAME sudah menunjuk ke domain: trufman.nafhan.space.
+- DNS: CNAME trufman → nafhansa.github.io.
+
+
+## 🔑 Lisensi
+MIT — silakan pakai, fork, dan kembangkan
