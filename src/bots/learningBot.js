@@ -110,7 +110,7 @@ function ensureBot({ roomId, seat, getState }) {
   const k = keyOf(roomId, seat);
   let bot = botPool.get(k);
   if (!bot) {
-    bot = createLearningBot({ seat, getState, mcRollouts: 200 });
+    bot = createLearningBot({ seat, getState, mcRollouts: 60 });
     botPool.set(k, bot);
   } else {
     bot.setSeat(seat);
@@ -317,7 +317,7 @@ export function createLearningBot({
   seat = 1,
   getState = () => ({}),
   memoryKey = "trufman_bot_memory_v3",
-  mcRollouts = 200,
+  mcRollouts = 60,
 } = {}) {
   const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14];
   const FACE = new Set([11,12,13]);

@@ -299,6 +299,18 @@ export default function Play() {
     [mySeat]
   );
 
+  // urutkan kartu di tangan biar stabil UI
+  const myHandSorted = useMemo(() => {
+    const h = (g.myHand || []).slice();
+    const sOrder = { C: 0, D: 1, H: 2, S: 3 };
+    h.sort((a, b) => {
+      const s = (sOrder[a.suit] ?? 0) - (sOrder[b.suit] ?? 0);
+      return s !== 0 ? s : (a.rank - b.rank);
+    });
+    return h;
+  }, [g.myHand]);
+
+
   // realtime channel (broadcast)
   useEffect(() => {
     if (!ready) return;
@@ -475,7 +487,7 @@ export default function Play() {
       <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <button className="text-stone-300 text-sm underline" onClick={() => goBack(`/lobby`)}>
+            <button className="text-stone-300 text-sm underline" onClick={() => goBack(`/`)}>
               ← Lobby
             </button>
             <h1 className="text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
@@ -542,7 +554,7 @@ export default function Play() {
               {mySeat != null ? g.tricksWon[mySeat] ?? 0 : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-center">
-              {(g.myHand || []).map((c) => (
+              {myHandSorted.map((c) => (
                 <CardFace key={c.id} card={c} disabled={!canPlayCard(c)} onClick={() => playCard(c)} />
               ))}
             </div>
@@ -681,7 +693,7 @@ export default function Play() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <button className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold" onClick={() => goBack(`/lobby`)}>
+              <button className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold" onClick={() => goBack(`/`)}>
                 Kembali ke Lobby
               </button>
             </div>
@@ -698,6 +710,9 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
   const botsRef = useRef({});
   const lastNonceBySeatRef = useRef({});
+
+  const seatsRef = useRef(seats);
+  useEffect(() => { seatsRef.current = seats; }, [seats]);
 
   // ----- Hydration untuk refresh -----
   const buildHandsFromDB = async () => {
@@ -738,7 +753,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   };
 
   const isSeatBot = (seat) => {
-    const row = seats.find((s) => s.seat === seat);
+    const row = seatsRef.current.find((s) => s.seat === seat);
     return (
       !!row &&
       (row.is_bot || isBotUserId(row.user_id) || row.display_name?.startsWith?.("Bot "))
@@ -813,17 +828,23 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
     }
   };
 
-  const seatOf = (userId) => seats.find((s) => s.user_id === userId)?.seat ?? null;
-  const userIdOfSeat = (seat) => seats.find((s) => s.seat === seat)?.user_id ?? null;
+  const seatOf = (userId) => seatsRef.current.find((s) => s.user_id === userId)?.seat ?? null;
+  const userIdOfSeat = (seat) => seatsRef.current.find((s) => s.seat === seat)?.user_id ?? null;
 
+  
+  const persistTimerRef = useRef(null);
   const persistPublicState = async () => {
-    try {
-      await supabase.from("room_states").upsert({
-        room_id: roomId,
-        state_json: hostState.current.publicState,
-        updated_at: new Date().toISOString(),
-      });
-    } catch {}
+    if (persistTimerRef.current) return;
+    persistTimerRef.current = setTimeout(async () => {
+      persistTimerRef.current = null;
+      try {
+        await supabase.from("room_states").upsert({
+          room_id: roomId,
+          state_json: hostState.current.publicState,
+          updated_at: new Date().toISOString(),
+        });
+      } catch {}
+    }, 250);
   };
   const sendState = () => {
     if (!hostState.current) return;
@@ -1167,5 +1188,5 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
     return () => {
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
     };
-  }, [isHost, seats, chRef]);
+  }, [isHost, roomId, chRef]);
 }
