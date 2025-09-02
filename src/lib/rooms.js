@@ -1,4 +1,3 @@
-// src/lib/rooms.js
 import { supabase, getUser } from "./supabaseClient";
 
 /* ===================== Utils ===================== */
@@ -37,32 +36,40 @@ export async function fetchSeats(roomId) {
 export async function fetchState(roomId) {
   const { data, error } = await supabase
     .from("room_state")
-    .select("*")
+    .select("id, created_by, status, require_trump_broken")
     .eq("id", roomId)
     .maybeSingle();
   if (error) throw error;
   return data ?? null;
 }
 
+/* ===================== UPDATE ROOM OPTIONS ===================== */
+export async function updateRoomOptions(roomId, { requireTrumpBroken }) {
+  const user = await getUser();
+  if (!user) throw new Error("Not signed in");
+  const { error } = await supabase
+    .from("room_state")
+    .update({ require_trump_broken: !!requireTrumpBroken })
+    .eq("id", roomId)
+    .eq("created_by", user.id);
+  if (error) throw error;
+  return true;
+}
+
 /* ===================== CREATE ROOM ===================== */
-// Membuat room baru; otomatis mencoba claim seat 0 untuk creator.
 export async function createRoom() {
   const user = await getUser();
   if (!user) throw new Error("Not signed in");
 
   const { data, error } = await supabase
     .from("room_state")
-    .insert({ created_by: user.id }) // status & code via default/generated
+    .insert({ created_by: user.id })
     .select("id")
     .single();
   if (error) throw error;
 
   const roomId = data.id;
-  try {
-    await claimSeat(roomId, 0);
-  } catch {
-    // abaikan jika gagal claim
-  }
+  try { await claimSeat(roomId, 0); } catch {}
   return roomId;
 }
 
@@ -95,7 +102,6 @@ export async function claimSeat(roomId, seat) {
   if (!user) throw new Error("Not signed in");
   const s = assertSeat(seat);
 
-  // NOTE: hilangkan .select().single() untuk menghindari SELECT ke room_seats
   const { error } = await supabase.from("room_seats").insert({
     room_id: roomId,
     seat: s,
@@ -104,7 +110,6 @@ export async function claimSeat(roomId, seat) {
     is_bot: false,
   });
   if (error) {
-    // 23505 = unique_violation (PK/unique (room_id, seat) sudah ada)
     if (error.code === "23505") throw new Error("Seat sudah diambil");
     throw error;
   }
@@ -126,7 +131,6 @@ export async function releaseSeat(roomId, seat) {
   return true;
 }
 
-// Opsional: melepas semua seat milik user di room tsb
 export async function releaseAllMySeats(roomId) {
   const user = await getUser();
   if (!user) throw new Error("Not signed in");
@@ -143,7 +147,6 @@ export async function releaseAllMySeats(roomId) {
 export async function addBotToSeat(roomId, seat) {
   const s = assertSeat(seat);
 
-  // 1) dapatkan/buat bot_uid untuk seat ini
   const botId = `bot:${roomId}:${s}`;
   let { data: map } = await supabase
     .from("bot_user_map")
@@ -160,11 +163,10 @@ export async function addBotToSeat(roomId, seat) {
     map = { bot_uid };
   }
 
-  // 2) insert kursi bot (host yang boleh, diizinkan policy)
   const { error } = await supabase.from("room_seats").insert({
     room_id: roomId,
     seat: s,
-    user_id: map.bot_uid, // UUID string
+    user_id: map.bot_uid,
     is_bot: true,
     display_name: `Bot P${s + 1}`,
   });
@@ -172,7 +174,6 @@ export async function addBotToSeat(roomId, seat) {
 }
 
 export async function removeBotByUserId(roomId, userId) {
-  // host boleh hapus kursi yang is_bot = true
   const { error } = await supabase
     .from("room_seats")
     .delete()

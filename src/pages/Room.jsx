@@ -1,12 +1,12 @@
-// src/pages/Room.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { getUser } from "../lib/supabaseClient";
 import {
   fetchSeats, claimSeat, releaseSeat, fetchState, subscribeRoom,
   startGame, endGame,
-  addBotToSeat, removeBotByUserId, isBotUserId, isBotRow
-} from "../lib/rooms"; // <-- pastikan impor dari lib/rooms
+  addBotToSeat, removeBotByUserId, isBotUserId, isBotRow,
+  updateRoomOptions,
+} from "../lib/rooms";
 
 const SeatName = ["P1", "P2", "P3", "P4"];
 
@@ -41,7 +41,7 @@ export default function Room() {
   const { id: roomId } = useParams();
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
- 
+
   async function onCopyId() {
     const ok = await copyText(String(roomId));
     if (ok) {
@@ -53,11 +53,15 @@ export default function Room() {
   }
 
   const [seats, setSeats]   = useState([]);
-  const [state, setState]   = useState(null);
+  const [state, setState]   = useState(null); // row room_state
   const [online, setOnline] = useState([]);
   const [me, setMe]         = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState("");
+
+  const [savingOpt, setSavingOpt] = useState(false);
+  const requireTrumpBroken = !!state?.require_trump_broken;
+  const isWaiting = state?.status === "waiting";
 
   const mySeat = useMemo(
     () => seats.find(s => s.user_id === me?.id)?.seat ?? null,
@@ -101,7 +105,7 @@ export default function Room() {
     return () => ctrl?.leave?.();
   }, [roomId]);
 
-  // redirect ke /play/:id ketika status berubah ke "playing"
+  // redirect ke play saat status berubah
   useEffect(() => {
     if (state?.status === "playing") {
       navigate(`/play/${roomId}`, { replace: true });
@@ -109,18 +113,12 @@ export default function Room() {
   }, [state?.status, roomId, navigate]);
 
   async function onClaim(i) {
-    try {
-      await claimSeat(roomId, i);
-    } catch (e) {
-      alert(e.message || "Gagal claim kursi (mungkin sudah terisi)");
-    }
+    try { await claimSeat(roomId, i); }
+    catch (e) { alert(e.message || "Gagal claim kursi (mungkin sudah terisi)"); }
   }
   async function onRelease(i) {
-    try {
-      await releaseSeat(roomId, i);
-    } catch (e) {
-      alert(e.message || "Gagal release kursi");
-    }
+    try { await releaseSeat(roomId, i); }
+    catch (e) { alert(e.message || "Gagal release kursi"); }
   }
 
   async function onAddBot(i) {
@@ -134,10 +132,8 @@ export default function Room() {
 
   const takenBy   = (i) => seats.find((s) => s.seat === i);
   const isTaken   = (i) => !!takenBy(i);
-  const isWaiting = state?.status === "waiting";
   const isHost    = me?.id && state?.created_by === me.id;
 
-  // hanya host yang bisa start; wajib 4 kursi terisi (termasuk bot)
   const canStart  = isHost && isWaiting && seats.length === 4;
 
   const handleStart = async () => {
@@ -148,6 +144,20 @@ export default function Room() {
       alert(e.message || "Gagal memulai game");
     }
   };
+
+  async function onToggleRule() {
+    if (!isHost) return;
+    try {
+      setSavingOpt(true);
+      await updateRoomOptions(roomId, { requireTrumpBroken: !requireTrumpBroken });
+      const st = await fetchState(roomId);
+      setState(st);
+    } catch (e) {
+      alert(e.message || "Gagal menyimpan opsi");
+    } finally {
+      setSavingOpt(false);
+    }
+  }
 
   return (
     <div className="min-h-screen w-full bg-zinc-900 text-stone-200 px-4 py-6">
@@ -162,7 +172,6 @@ export default function Room() {
               )}
             </span>
 
-            {/* Host controls */}
             {isHost && isWaiting && (
               <button
                 onClick={handleStart}
@@ -202,6 +211,7 @@ export default function Room() {
           <div className="mt-6 text-sm opacity-70">Loading…</div>
         ) : (
           <>
+            {/* Seats */}
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[0,1,2,3].map((i) => {
                 const t = takenBy(i);
@@ -235,7 +245,6 @@ export default function Room() {
                         Release
                       </button>
 
-                      {/* Bot controls */}
                       {isHost && isWaiting && !t && (
                         <button
                           onClick={() => onAddBot(i)}
@@ -258,6 +267,37 @@ export default function Room() {
               })}
             </div>
 
+            {/* Room options */}
+            <div className="mt-6 p-4 rounded-xl border border-zinc-700 bg-zinc-800/60">
+              <div className="font-semibold mb-2">Aturan</div>
+
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm">
+                  <div className="font-medium">Perlu Truf Broken?</div>
+                  <div className="text-stone-300">
+                    Jika aktif, pemain <em>tidak boleh</em> lead truf di awal trik
+                    sebelum ada yang motong (atau kartu pemain itu tinggal truf semua).
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">{requireTrumpBroken ? "Aktif" : "Nonaktif"}</span>
+                  <button
+                    onClick={onToggleRule}
+                    disabled={!isHost || !isWaiting || savingOpt}
+                    className="px-3 py-1.5 rounded bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800"
+                    title={!isHost ? "Hanya host" : (!isWaiting ? "Ubah saat waiting" : "Toggle")}
+                  >
+                    {savingOpt ? "Menyimpan..." : "Toggle"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-xs text-stone-400 mt-2">
+                * Perubahan berlaku untuk ronde berikutnya.
+              </div>
+            </div>
+
+            {/* Debug state */}
             <div className="mt-6 p-4 rounded-xl border border-zinc-700 bg-zinc-800/60">
               <div className="font-semibold mb-1">State</div>
               <pre className="text-xs overflow-auto">{JSON.stringify(state, null, 2)}</pre>
