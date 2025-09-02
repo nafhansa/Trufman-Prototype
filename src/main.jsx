@@ -1,10 +1,21 @@
 // src/main.jsx
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
 
-createRoot(document.getElementById("root")).render(
+import AuthGate from "./components/AuthGate.jsx";
+import Lobby from "./pages/Lobby.jsx";
+import Room from "./pages/Room.jsx";
+import Play from "./pages/Play.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+import AppPage from "./App.jsx"; // halaman vs bot (default export TrufmanApp)
+
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthGate>
-      <HashRouter>
+      <BrowserRouter>
         <Routes>
           <Route path="/" element={<Lobby />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -13,7 +24,7 @@ createRoot(document.getElementById("root")).render(
           <Route path="/solo" element={<AppPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </HashRouter>
+      </BrowserRouter>
     </AuthGate>
   </React.StrictMode>
 );
