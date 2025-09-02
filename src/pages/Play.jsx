@@ -213,7 +213,6 @@ export default function Play() {
       try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
       try { supabase.getChannels().forEach((c) => supabase.removeChannel(c)); } catch {}
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
-      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
       navigate(to, { replace: true });
     },
     [navigate]
@@ -381,16 +380,7 @@ export default function Play() {
   useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo);
 
   // Derived
-  
-  const myHandSorted = useMemo(() => {
-    const h = (g.myHand || []).slice();
-    h.sort((a, b) => {
-      const s = (suitOrder[a.suit] ?? 0) - (suitOrder[b.suit] ?? 0);
-      return s !== 0 ? s : (a.rank - b.rank);
-    });
-    return h;
-  }, [g.myHand]);
-const handBySuit = useMemo(() => {
+  const handBySuit = useMemo(() => {
     const map = { C: [], D: [], H: [], S: [] };
     for (const c of g.myHand || []) map[c.suit].push(c.rank);
     for (const k of Object.keys(map))
@@ -552,7 +542,7 @@ const handBySuit = useMemo(() => {
               {mySeat != null ? g.tricksWon[mySeat] ?? 0 : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-center">
-              {myHandSorted.map((c) => (
+              {(g.myHand || []).map((c) => (
                 <CardFace key={c.id} card={c} disabled={!canPlayCard(c)} onClick={() => playCard(c)} />
               ))}
             </div>
@@ -750,7 +740,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   };
 
   const isSeatBot = (seat) => {
-    const row = seatsRef.current.find((s) => s.seat === seat);
+    const row = seats.find((s) => s.seat === seat);
     return (
       !!row &&
       (row.is_bot || isBotUserId(row.user_id) || row.display_name?.startsWith?.("Bot "))
@@ -828,19 +818,14 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const seatOf = (userId) => seatsRef.current.find((s) => s.user_id === userId)?.seat ?? null;
   const userIdOfSeat = (seat) => seatsRef.current.find((s) => s.seat === seat)?.user_id ?? null;
 
-  const persistTimerRef = useRef(null);
   const persistPublicState = async () => {
-    if (persistTimerRef.current) return;
-    persistTimerRef.current = setTimeout(async () => {
-      persistTimerRef.current = null;
-      try {
-        await supabase.from("room_states").upsert({
-          room_id: roomId,
-          state_json: hostState.current.publicState,
-          updated_at: new Date().toISOString(),
-        });
-      } catch {}
-    }, 250);
+    try {
+      await supabase.from("room_states").upsert({
+        room_id: roomId,
+        state_json: hostState.current.publicState,
+        updated_at: new Date().toISOString(),
+      });
+    } catch {}
   };
   const sendState = () => {
     if (!hostState.current) return;
@@ -974,7 +959,23 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
     timersRef.current.add(t);
   };
 
+  
+  // Fallback: setelah refresh, kadang event "sync" kelewat sebelum listener host siap.
+  // Pastikan host rehydrate dan lanjutkan aksi bot.
   useEffect(() => {
+    if (!isHost) return;
+    (async () => {
+      if (!hostState.current) {
+        const ok = await hydrateHostFromDB();
+        if (!ok) return;
+      }
+      // Broadcast sekali untuk menyamakan klien lain, lalu lanjutkan bot.
+      sendState();
+      runBots();
+      runBotsTick();
+    })();
+  }, [isHost, roomId]);
+useEffect(() => {
     if (!isHost || !chRef.current) return;
     const ch = chRef.current;
 
@@ -1113,10 +1114,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
       st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
       st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
-      // broadcast + persist progress of the trick
-      sendState();
-
-
       // notify bots
       try {
         const lead = st.leadSuit || suit;
@@ -1187,7 +1184,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
 
     return () => {
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
-      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
     };
   }, [isHost, roomId, chRef]);
 }
