@@ -213,6 +213,7 @@ export default function Play() {
       try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
       try { supabase.getChannels().forEach((c) => supabase.removeChannel(c)); } catch {}
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
+      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
       navigate(to, { replace: true });
     },
     [navigate]
@@ -299,18 +300,6 @@ export default function Play() {
     [mySeat]
   );
 
-  // urutkan kartu di tangan biar stabil UI
-  const myHandSorted = useMemo(() => {
-    const h = (g.myHand || []).slice();
-    const sOrder = { C: 0, D: 1, H: 2, S: 3 };
-    h.sort((a, b) => {
-      const s = (sOrder[a.suit] ?? 0) - (sOrder[b.suit] ?? 0);
-      return s !== 0 ? s : (a.rank - b.rank);
-    });
-    return h;
-  }, [g.myHand]);
-
-
   // realtime channel (broadcast)
   useEffect(() => {
     if (!ready) return;
@@ -392,7 +381,16 @@ export default function Play() {
   useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo);
 
   // Derived
-  const handBySuit = useMemo(() => {
+  
+  const myHandSorted = useMemo(() => {
+    const h = (g.myHand || []).slice();
+    h.sort((a, b) => {
+      const s = (suitOrder[a.suit] ?? 0) - (suitOrder[b.suit] ?? 0);
+      return s !== 0 ? s : (a.rank - b.rank);
+    });
+    return h;
+  }, [g.myHand]);
+const handBySuit = useMemo(() => {
     const map = { C: [], D: [], H: [], S: [] };
     for (const c of g.myHand || []) map[c.suit].push(c.rank);
     for (const k of Object.keys(map))
@@ -710,7 +708,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
   const botsRef = useRef({});
   const lastNonceBySeatRef = useRef({});
-
   const seatsRef = useRef(seats);
   useEffect(() => { seatsRef.current = seats; }, [seats]);
 
@@ -831,7 +828,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const seatOf = (userId) => seatsRef.current.find((s) => s.user_id === userId)?.seat ?? null;
   const userIdOfSeat = (seat) => seatsRef.current.find((s) => s.seat === seat)?.user_id ?? null;
 
-  
   const persistTimerRef = useRef(null);
   const persistPublicState = async () => {
     if (persistTimerRef.current) return;
@@ -1117,6 +1113,10 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
       st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
       st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
+      // broadcast + persist progress of the trick
+      sendState();
+
+
       // notify bots
       try {
         const lead = st.leadSuit || suit;
@@ -1187,6 +1187,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
 
     return () => {
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
+      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
     };
   }, [isHost, roomId, chRef]);
 }
