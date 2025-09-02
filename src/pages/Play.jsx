@@ -207,12 +207,16 @@ export default function Play() {
   const timersRef = useRef(new Set());
   const [ready, setReady] = useState(false);
 
+  // throttle handle: persist room_state
+  const persistTimerRef = useRef(null);
+
   const goBack = useCallback(
-    (to) => {
+    (to = "/") => {
       try { if (chRef.current) supabase.removeChannel(chRef.current); } catch {}
       try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
       try { supabase.getChannels().forEach((c) => supabase.removeChannel(c)); } catch {}
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
+      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
       navigate(to, { replace: true });
     },
     [navigate]
@@ -270,6 +274,7 @@ export default function Play() {
       try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
       try { supabase.getChannels().forEach((c) => supabase.removeChannel(c)); } catch {}
       try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
+      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
     };
   }, [roomId]);
 
@@ -336,13 +341,47 @@ export default function Play() {
     ch.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         ch.send({ type: "broadcast", event: "sync", payload: { hello: "sync" } });
-      }
-    });
+    }});
 
     return () => {
       try { supabase.removeChannel(ch); } catch {}
     };
   }, [roomId, ready]);
+
+  // Fallback polling ketika Realtime belum joined (mis. WS terblokir/putus)
+  const isRealtimeJoined = useCallback(() => {
+    try {
+      const ch = chRef.current;
+      if (!ch) return false;
+      // supabase-js v2: channel.state string, beberapa build expose state() function
+      return ch.state === "joined" || (typeof ch.state === "function" && ch.state() === "joined");
+    } catch { return false; }
+  }, []);
+  useEffect(() => {
+    if (!roomId) return;
+    let stopped = false;
+    const iv = setInterval(async () => {
+      if (stopped) return;
+      if (isRealtimeJoined()) return;
+      try {
+        const { data, error } = await supabase
+          .from("room_states")
+          .select("state_json")
+          .eq("room_id", roomId)
+          .maybeSingle();
+        if (!error && data?.state_json) {
+          const s = data.state_json;
+          setG((old) => ({
+            ...old,
+            ...s,
+            myHand: old.myHand,
+            table: (s.table || []).map((t) => ({ ...t })),
+          }));
+        }
+      } catch {}
+    }, 1000);
+    return () => { stopped = true; clearInterval(iv); };
+  }, [roomId, isRealtimeJoined]);
 
   // Postgres Changes: my hand
   useEffect(() => {
@@ -377,9 +416,18 @@ export default function Play() {
   }, [roomId, meId]);
 
   // Host Controller
-  useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo);
+  useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, persistTimerRef);
 
-  // Derived
+  // Derived — urutkan kartu tangan biar stabil di UI
+  const myHandSorted = useMemo(() => {
+    const h = (g.myHand || []).slice();
+    h.sort((a, b) => {
+      const s = (suitOrder[a.suit] ?? 0) - (suitOrder[b.suit] ?? 0);
+      return s !== 0 ? s : (a.rank - b.rank);
+    });
+    return h;
+  }, [g.myHand]);
+
   const handBySuit = useMemo(() => {
     const map = { C: [], D: [], H: [], S: [] };
     for (const c of g.myHand || []) map[c.suit].push(c.rank);
@@ -416,7 +464,7 @@ export default function Play() {
     chRef.current?.send({ type: "broadcast", event: "bid", payload: bid });
   }
 
-  // =============== Patch A: guard awal trik pakai panjang meja ===============
+  // Guard boleh main kartu
   const canPlayCard = useCallback(
     (c) => {
       if (g.phase !== "play" || mySeat == null) return false;
@@ -436,7 +484,7 @@ export default function Play() {
       // Bukan awal trik: default follow-suit wajib
       const hasLead = (g.myHand || []).some((h) => h.suit === g.leadSuit);
       if (hasLead && c.suit !== g.leadSuit) {
-        // Patch B (client): jika mode bebas, boleh menyimpang asal truf
+        // mode bebas: boleh menyimpang asal truf
         if (!g.requireTrumpBroken && c.suit === g.trump) return true;
         return false;
       }
@@ -542,7 +590,7 @@ export default function Play() {
               {mySeat != null ? g.tricksWon[mySeat] ?? 0 : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
             </div>
             <div className="flex flex-wrap gap-2 items-center justify-center">
-              {(g.myHand || []).map((c) => (
+              {myHandSorted.map((c) => (
                 <CardFace key={c.id} card={c} disabled={!canPlayCard(c)} onClick={() => playCard(c)} />
               ))}
             </div>
@@ -694,7 +742,7 @@ export default function Play() {
 
 /* ========================= Host Controller hook ========================= */
 
-function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
+function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, persistTimerRef) {
   const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
   const botsRef = useRef({});
   const lastNonceBySeatRef = useRef({});
@@ -710,7 +758,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
         .select("owner, card")
         .eq("room_id", roomId);
       rows?.forEach((r) => {
-        const seat = seats.find((s) => s.user_id === r.owner)?.seat;
+        const seat = seatsRef.current.find((s) => s.user_id === r.owner)?.seat;
         if (seat != null) hands[seat].push(r.card);
       });
     } catch {}
@@ -728,7 +776,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
       if (!saved) return false;
       const hands = await buildHandsFromDB();
       saved.handSizes = [0, 1, 2, 3].map((s) => hands[s].length);
-      // fallback flag baru
       if (typeof saved.requireTrumpBroken === "undefined") {
         saved.requireTrumpBroken = !!(roomInfo?.require_trump_broken);
       }
@@ -740,7 +787,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   };
 
   const isSeatBot = (seat) => {
-    const row = seats.find((s) => s.seat === seat);
+    const row = seatsRef.current.find((s) => s.seat === seat);
     return (
       !!row &&
       (row.is_bot || isBotUserId(row.user_id) || row.display_name?.startsWith?.("Bot "))
@@ -818,15 +865,21 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const seatOf = (userId) => seatsRef.current.find((s) => s.user_id === userId)?.seat ?? null;
   const userIdOfSeat = (seat) => seatsRef.current.find((s) => s.seat === seat)?.user_id ?? null;
 
+  // persist public state — throttled ±4x/detik
   const persistPublicState = async () => {
-    try {
-      await supabase.from("room_states").upsert({
-        room_id: roomId,
-        state_json: hostState.current.publicState,
-        updated_at: new Date().toISOString(),
-      });
-    } catch {}
+    if (persistTimerRef?.current) return;
+    if (persistTimerRef) persistTimerRef.current = setTimeout(async () => {
+      try {
+        await supabase.from("room_states").upsert({
+          room_id: roomId,
+          state_json: hostState.current.publicState,
+          updated_at: new Date().toISOString(),
+        });
+      } catch {}
+      try { if (persistTimerRef?.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
+    }, 250);
   };
+
   const sendState = () => {
     if (!hostState.current) return;
     const payload = hostState.current.publicState;
@@ -928,14 +981,14 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
   const runBots = useCallback(() => {
     maybeRunBots({
       hostState,
-      seats,
+      seats: seatsRef.current,
       timersRef,
       sendState,
       sendHandToSeat,
       trickWinner,
       roomId,
     });
-  }, [seats, roomId]);
+  }, [roomId]);
 
   const finishRoundAndMaybeContinue = () => {
     const st = hostState.current.publicState;
@@ -959,9 +1012,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
     timersRef.current.add(t);
   };
 
-  
-  // Fallback: setelah refresh, kadang event "sync" kelewat sebelum listener host siap.
-  // Pastikan host rehydrate dan lanjutkan aksi bot.
+  // Fallback: setelah refresh, pastikan host rehydrate & jalan lagi
   useEffect(() => {
     if (!isHost) return;
     (async () => {
@@ -969,13 +1020,14 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo) {
         const ok = await hydrateHostFromDB();
         if (!ok) return;
       }
-      // Broadcast sekali untuk menyamakan klien lain, lalu lanjutkan bot.
+      // Broadcast supaya klien lain sinkron, lalu lanjutkan bot.
       sendState();
       runBots();
       runBotsTick();
     })();
   }, [isHost, roomId]);
-useEffect(() => {
+
+  useEffect(() => {
     if (!isHost || !chRef.current) return;
     const ch = chRef.current;
 
@@ -1048,18 +1100,21 @@ useEffect(() => {
     };
 
     const onPlayCard = async ({ payload }) => {
-      const nonce = payload?.nonce;
-      if (nonce) {
-        if (lastNonceBySeatRef.current[seat] === nonce) return; // duplikat → drop
-            lastNonceBySeatRef.current[seat] = nonce;
-      }
-
       if (!hostState.current) return;
 
       const fromUser = payload?.from;
-      const cardId = typeof payload === "string" ? payload : payload?.card || payload?.id;
       const seat = seatOf(fromUser);
-      if (seat == null || !cardId) return;
+      if (seat == null) return;
+
+      // (opsional) nonce anti dobel
+      const nonce = payload?.nonce;
+      if (nonce) {
+        if (lastNonceBySeatRef.current[seat] === nonce) return;
+        lastNonceBySeatRef.current[seat] = nonce;
+      }
+
+      const cardId = typeof payload === "string" ? payload : payload?.card || payload?.id;
+      if (!cardId) return;
 
       const st = hostState.current.publicState;
       if (st.phase !== "play" || seat !== st.currentPlayer) return;
@@ -1088,15 +1143,13 @@ useEffect(() => {
         }
         st.leadSuit = suit;
       } else {
-        // ====== VALIDASI FOLLOW-SUIT (Patch B) ======
+        // ====== VALIDASI FOLLOW-SUIT ======
         const hasLead = hand.some((id) => cardFromId(id).suit === st.leadSuit);
         if (hasLead && suit !== st.leadSuit) {
           if (st.requireTrumpBroken) {
-            // mode klasik: tetap wajib ikut warna
             sendToastToSeat(seat, "Harus ikut warna (follow suit)!");
             return;
           } else {
-            // mode bebas: boleh menyimpang ASALKAN yang dilempar itu truf
             if (suit !== st.trump) {
               sendToastToSeat(seat, "Kalau mau menyimpang, harus ngetruf.");
               return;
@@ -1114,7 +1167,7 @@ useEffect(() => {
       st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
       st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
-      // notify bots
+      // notify bots (observasi)
       try {
         const lead = st.leadSuit || suit;
         [0, 1, 2, 3].forEach((s) => {
@@ -1137,7 +1190,7 @@ useEffect(() => {
       // selesai satu trik?
       if (st.table.length === 4) {
         st.table = st.table.map((t) => ({ ...t, hidden: false }));
-        sendState();
+        sendState(); // tampilin 4 kartu ke semua
 
         const t = setTimeout(() => {
           const win = trickWinner(st.table, st.trump, st.leadSuit);
@@ -1171,6 +1224,7 @@ useEffect(() => {
         return;
       }
 
+      // broadcast progress meja setiap kartu (biar refresh di tengah trik tetap lengkap)
       sendState();
       sendHandToSeat(seat);
       runBotsTick();
