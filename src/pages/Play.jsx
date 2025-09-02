@@ -63,6 +63,25 @@ function shuffle(a) {
   return arr;
 }
 
+/* ========================= Audio (match App.jsx, no trump-break) ========================= */
+function playSound(src, vol = 1.0) {
+  try {
+    const a = new Audio(src);
+    a.volume = Math.max(0, Math.min(1, vol));
+    a.play().catch(() => {});
+  } catch (_) {}
+}
+const MUSIC_URL =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/background-music.mp3";
+const SFX_CARD_NORMAL =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-normal.wav";
+const SFX_CARD_TRUMP =
+  "https://github.com/nafhansa/Trufman-Prototype/releases/download/v1.0-assets/card-place-trump.wav";
+
+function playCardPlace(isTrump) {
+  playSound(isTrump ? SFX_CARD_TRUMP : SFX_CARD_NORMAL, 1.0);
+}
+
 /* ========================= UI atoms ========================= */
 
 function Badge({ children }) {
@@ -210,6 +229,44 @@ export default function Play() {
   // throttle handle: persist room_state
   const persistTimerRef = useRef(null);
 
+  // ===== Background music & audio unlock =====
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio(MUSIC_URL);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.3;
+    }
+  }, []);
+
+  const toggleMusic = useCallback(() => {
+    if (!audioRef.current) return;
+    if (isMusicPlaying) audioRef.current.pause();
+    else audioRef.current.play().catch(() => {});
+    setIsMusicPlaying((v) => !v);
+  }, [isMusicPlaying]);
+
+  useEffect(() => {
+    function unlockAudio() {
+      try {
+        const silent = new Audio();
+        silent.muted = true;
+        silent.play().catch(() => {});
+      } catch (_) {}
+      [SFX_CARD_NORMAL, SFX_CARD_TRUMP].forEach((src) => {
+        try {
+          const a = new Audio(src);
+          a.volume = 0;
+          a.play().then(() => a.pause()).catch(() => {});
+        } catch (_) {}
+      });
+    }
+    window.addEventListener("click", unlockAudio, { once: true });
+    return () => window.removeEventListener("click", unlockAudio);
+  }, []);
+
   const goBack = useCallback(
     (to = "/") => {
       try { if (chRef.current) supabase.removeChannel(chRef.current); } catch {}
@@ -341,7 +398,7 @@ export default function Play() {
     ch.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         ch.send({ type: "broadcast", event: "sync", payload: { hello: "sync" } });
-    }});
+      }});
 
     return () => {
       try { supabase.removeChannel(ch); } catch {}
@@ -353,7 +410,6 @@ export default function Play() {
     try {
       const ch = chRef.current;
       if (!ch) return false;
-      // supabase-js v2: channel.state string, beberapa build expose state() function
       return ch.state === "joined" || (typeof ch.state === "function" && ch.state() === "joined");
     } catch { return false; }
   }, []);
@@ -414,6 +470,32 @@ export default function Play() {
       try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
     };
   }, [roomId, meId]);
+
+  // ====== SFX when a new card appears on table (no trump-break SFX) ======
+  const firstTableHydrate = useRef(true);
+  const lastTableCountRef = useRef(0);
+
+  useEffect(() => {
+    const count = g.table?.length ?? 0;
+
+    if (firstTableHydrate.current) {
+      firstTableHydrate.current = false;
+      lastTableCountRef.current = count;
+      return;
+    }
+
+    // kartu baru → bunyi (pilih trump vs normal)
+    if (count > lastTableCountRef.current) {
+      const last = g.table[count - 1];
+      if (last?.card) {
+        const suit = cardFromId(last.card).suit;
+        const isTrump = g.trump && suit === g.trump;
+        playCardPlace(!!isTrump);
+      }
+    }
+
+    lastTableCountRef.current = count;
+  }, [g.table, g.trump]);
 
   // Host Controller
   useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, persistTimerRef);
@@ -531,6 +613,13 @@ export default function Play() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={toggleMusic}
+              className="px-3 py-1.5 rounded-lg text-lg bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
+              title={isMusicPlaying ? "Matikan musik" : "Nyalakan musik"}
+            >
+              {isMusicPlaying ? '🔇' : '🔊'}
+            </button>
             <div className="text-stone-300 text-sm">
               Room: <span className="tabular-nums">{roomId.slice(0, 8)}</span> •
               Ronde: {g.round}/{MAX_ROUNDS} • Dealer: P{g.dealer + 1}
@@ -751,70 +840,40 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
 
   // ----- Hydration untuk refresh -----
   const buildHandsFromDB = async () => {
-  const hands = { 0: [], 1: [], 2: [], 3: [] };
-  try {
-    // pastikan punya peta user_id -> seat
-    const seatRows =
-      (seatsRef.current && seatsRef.current.length)
-        ? seatsRef.current
-        : (await fetchSeats(roomId));
-    const seatMap = new Map((seatRows || []).map((s) => [s.user_id, s.seat]));
-
-    const { data: rows, error } = await supabase
-      .from("hands")
-      .select("owner, card")
-      .eq("room_id", roomId);
-
-    if (error) return { hands, ok: false };
-
-    rows?.forEach((r) => {
-      const seat = seatMap.get(r.owner);
-      if (seat != null) hands[seat].push(r.card);
-    });
-
-    return { hands, ok: true };
-  } catch {
-    return { hands, ok: false };
-  }
-};
-
-
-  const hydrateHostFromDB = async () => {
-  try {
-    const { data: rs } = await supabase
-      .from("room_states")
-      .select("state_json")
-      .eq("room_id", roomId)
-      .maybeSingle();
-
-    const saved = rs?.state_json;
-    if (!saved) return false;
-
-    const { hands, ok } = await buildHandsFromDB();
-    const counts = [0, 1, 2, 3].map((s) => hands[s].length);
-
-    // hanya override handSizes kalau data hands dari DB terbukti lengkap & konsisten
-    const savedSizes = Array.isArray(saved.handSizes) ? saved.handSizes : [];
-    const sizesMatch =
-      ok &&
-      savedSizes.length === 4 &&
-      counts.every((c, i) => c === savedSizes[i]);
-
-    if (sizesMatch) {
-      saved.handSizes = counts;
-    }
-
-    if (typeof saved.requireTrumpBroken === "undefined") {
-      saved.requireTrumpBroken = !!(roomInfo?.require_trump_broken);
-    }
-
-    hostState.current = { publicState: saved, hands };
-    return true;
-  } catch {
-    return false;
-  }
+    const hands = { 0: [], 1: [], 2: [], 3: [] };
+    try {
+      const { data: rows } = await supabase
+        .from("hands")
+        .select("owner, card")
+        .eq("room_id", roomId);
+      rows?.forEach((r) => {
+        const seat = seatsRef.current.find((s) => s.user_id === r.owner)?.seat;
+        if (seat != null) hands[seat].push(r.card);
+      });
+    } catch {}
+    return hands;
   };
 
+  const hydrateHostFromDB = async () => {
+    try {
+      const { data: rs } = await supabase
+        .from("room_states")
+        .select("state_json")
+        .eq("room_id", roomId)
+        .maybeSingle();
+      const saved = rs?.state_json;
+      if (!saved) return false;
+      const hands = await buildHandsFromDB();
+      saved.handSizes = [0, 1, 2, 3].map((s) => hands[s].length);
+      if (typeof saved.requireTrumpBroken === "undefined") {
+        saved.requireTrumpBroken = !!(roomInfo?.require_trump_broken);
+      }
+      hostState.current = { publicState: saved, hands };
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const isSeatBot = (seat) => {
     const row = seatsRef.current.find((s) => s.seat === seat);
@@ -843,147 +902,147 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
   };
 
   // ====== satu pintu memproses bid (dipakai bot & event realtime) ======
-const applyBid = (fromUser, bidPayload) => {
-  if (!hostState.current) return;
-  const seat = seatOf(fromUser);
-  if (seat == null) return;
-
-  const b = {
-    count: Number(bidPayload.count) || 0,
-    suit: bidPayload.suit,
-    rank: bidPayload.rank,
-  };
-  hostState.current.publicState.bids[seat] = b;
-
-  const bids = hostState.current.publicState.bids;
-  if (bids.every(Boolean)) {
-    // tentukan pemenang bidding: COUNT > SUIT(C<D<H<S) > RANK
-    let bestIdx = 0;
-    for (let i = 1; i < 4; i++) {
-      const bi = bids[i], bb = bids[bestIdx];
-      const biSuit = suitOrder[bi.suit] ?? -1;
-      const bbSuit = suitOrder[bb.suit] ?? -1;
-      if (
-        bi.count > bb.count ||
-        (bi.count === bb.count && biSuit > bbSuit) ||
-        (bi.count === bb.count && biSuit === bbSuit && bi.rank > bb.rank)
-      ) bestIdx = i;
-    }
-    const st = hostState.current.publicState;
-    st.trump = bids[bestIdx].suit;
-    st.trickLeader = bestIdx;
-    st.currentPlayer = bestIdx;
-
-    const sum = bids.reduce((a, x) => a + (x?.count || 0), 0);
-    const mode = sum >= 13 ? "ATAS" : "BAWAH";
-    st.mode = mode;
-    st.targets = bids.map((x) => mode === "ATAS" ? x.count + 1 : Math.max(0, x.count - 1));
-  }
-  sendState();
-};
-
-// ====== satu pintu memproses play (dipakai bot & event realtime) ======
-const applyPlay = async (fromUser, cardId, nonce) => {
-  if (nonce) {
+  const applyBid = (fromUser, bidPayload) => {
+    if (!hostState.current) return;
     const seat = seatOf(fromUser);
-    if (lastNonceBySeatRef.current[seat] === nonce) return;
-    lastNonceBySeatRef.current[seat] = nonce;
-  }
+    if (seat == null) return;
 
-  if (!hostState.current) return;
+    const b = {
+      count: Number(bidPayload.count) || 0,
+      suit: bidPayload.suit,
+      rank: bidPayload.rank,
+    };
+    hostState.current.publicState.bids[seat] = b;
 
-  const seat = seatOf(fromUser);
-  if (seat == null || !cardId) return;
+    const bids = hostState.current.publicState.bids;
+    if (bids.every(Boolean)) {
+      // tentukan pemenang bidding: COUNT > SUIT(C<D<H<S) > RANK
+      let bestIdx = 0;
+      for (let i = 1; i < 4; i++) {
+        const bi = bids[i], bb = bids[bestIdx];
+        const biSuit = suitOrder[bi.suit] ?? -1;
+        const bbSuit = suitOrder[bb.suit] ?? -1;
+        if (
+          bi.count > bb.count ||
+          (bi.count === bb.count && biSuit > bbSuit) ||
+          (bi.count === bb.count && biSuit === bbSuit && bi.rank > bb.rank)
+        ) bestIdx = i;
+      }
+      const st = hostState.current.publicState;
+      st.trump = bids[bestIdx].suit;
+      st.trickLeader = bestIdx;
+      st.currentPlayer = bestIdx;
 
-  const st = hostState.current.publicState;
-  if (st.phase !== "play" || seat !== st.currentPlayer) return;
-  if (st.table.length >= 4) return;
+      const sum = bids.reduce((a, x) => a + (x?.count || 0), 0);
+      const mode = sum >= 13 ? "ATAS" : "BAWAH";
+      st.mode = mode;
+      st.targets = bids.map((x) => mode === "ATAS" ? x.count + 1 : Math.max(0, x.count - 1));
+    }
+    sendState();
+  };
 
-  const hand = hostState.current.hands[seat];
-  const idx = hand.indexOf(cardId);
-  if (idx === -1) return;
+  // ====== satu pintu memproses play (dipakai bot & event realtime) ======
+  const applyPlay = async (fromUser, cardId, nonce) => {
+    if (nonce) {
+      const seat = seatOf(fromUser);
+      if (lastNonceBySeatRef.current[seat] === nonce) return;
+      lastNonceBySeatRef.current[seat] = nonce;
+    }
 
-  const suit = cardFromId(cardId).suit;
+    if (!hostState.current) return;
 
-  // Awal trik
-  if (st.table.length === 0) {
-    if (st.requireTrumpBroken) {
-      if (suit === st.trump && !st.trumpBroken) {
-        const hasNonTrump = hand.some((id) => cardFromId(id).suit !== st.trump);
-        if (hasNonTrump) { sendToastToSeat(seat, "Belum boleh lead truf (harus broken dulu)!"); return; }
+    const seat = seatOf(fromUser);
+    if (seat == null || !cardId) return;
+
+    const st = hostState.current.publicState;
+    if (st.phase !== "play" || seat !== st.currentPlayer) return;
+    if (st.table.length >= 4) return;
+
+    const hand = hostState.current.hands[seat];
+    const idx = hand.indexOf(cardId);
+    if (idx === -1) return;
+
+    const suit = cardFromId(cardId).suit;
+
+    // Awal trik
+    if (st.table.length === 0) {
+      if (st.requireTrumpBroken) {
+        if (suit === st.trump && !st.trumpBroken) {
+          const hasNonTrump = hand.some((id) => cardFromId(id).suit !== st.trump);
+          if (hasNonTrump) { sendToastToSeat(seat, "Belum boleh lead truf (harus broken dulu)!"); return; }
+          st.trumpBroken = true;
+        }
+      } else if (suit === st.trump && !st.trumpBroken) {
         st.trumpBroken = true;
       }
-    } else if (suit === st.trump && !st.trumpBroken) {
-      st.trumpBroken = true;
+      st.leadSuit = suit;
+    } else {
+      // Follow-suit
+      const hasLead = hand.some((id) => cardFromId(id).suit === st.leadSuit);
+      if (hasLead && suit !== st.leadSuit) {
+        if (st.requireTrumpBroken) { sendToastToSeat(seat, "Harus ikut warna (follow suit)!"); return; }
+        if (suit !== st.trump) { sendToastToSeat(seat, "Kalau mau menyimpang, harus ngetruf."); return; }
+      }
+      if (suit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) st.trumpBroken = true;
     }
-    st.leadSuit = suit;
-  } else {
-    // Follow-suit
-    const hasLead = hand.some((id) => cardFromId(id).suit === st.leadSuit);
-    if (hasLead && suit !== st.leadSuit) {
-      if (st.requireTrumpBroken) { sendToastToSeat(seat, "Harus ikut warna (follow suit)!"); return; }
-      if (suit !== st.trump) { sendToastToSeat(seat, "Kalau mau menyimpang, harus ngetruf."); return; }
-    }
-    if (suit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) st.trumpBroken = true;
-  }
 
-  // mainkan kartu
-  hand.splice(idx, 1);
-  st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
-  st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
+    // mainkan kartu
+    hand.splice(idx, 1);
+    st.table.push({ player: seat, card: cardId, hidden: suit === st.trump });
+    st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
 
-  // observasi bot
-  try {
-    const lead = st.leadSuit || suit;
-    [0,1,2,3].forEach((s) => { if (!isSeatBot(s)) return;
-      ensureBot(s).observePlay({ player: seat, card: cardFromId(cardId), leadSuit: lead });
-    });
-  } catch {}
+    // observasi bot
+    try {
+      const lead = st.leadSuit || suit;
+      [0,1,2,3].forEach((s) => { if (!isSeatBot(s)) return;
+        ensureBot(s).observePlay({ player: seat, card: cardFromId(cardId), leadSuit: lead });
+      });
+    } catch {}
 
-  // sinkron DB untuk hands
-  try {
-    const uid = userIdOfSeat(seat);
-    if (uid) await supabase.from("hands").delete().match({ room_id: roomId, owner: uid, card: cardId });
-  } catch {}
+    // sinkron DB untuk hands
+    try {
+      const uid = userIdOfSeat(seat);
+      if (uid) await supabase.from("hands").delete().match({ room_id: roomId, owner: uid, card: cardId });
+    } catch {}
 
-  // next turn
-  st.currentPlayer = (st.currentPlayer + 1) % 4;
+    // next turn
+    st.currentPlayer = (st.currentPlayer + 1) % 4;
 
-  // selesai trik?
-  if (st.table.length === 4) {
-    st.table = st.table.map((t) => ({ ...t, hidden: false }));
-    sendState();
-
-    const t = setTimeout(() => {
-      const win = trickWinner(st.table, st.trump, st.leadSuit);
-
-      try {
-        const lead = st.leadSuit;
-        const plays = st.table.map((t) => ({ player: t.player, card: cardFromId(t.card) }));
-        [0,1,2,3].forEach((s) => { if (!isSeatBot(s)) return;
-          ensureBot(s).observeTrick({ plays, winner: win, trump: st.trump, leadSuit: lead });
-        });
-      } catch {}
-
-      st.tricksWon[win] = (st.tricksWon[win] || 0) + 1;
-      st.table = [];
-      st.leadSuit = null;
-      st.currentPlayer = win;
-
-      const sumHands = st.handSizes.reduce((a,b)=>a+b,0);
-      if (sumHands === 0) { sendState(); finishRoundAndMaybeContinue(); return; }
-
+    // selesai trik?
+    if (st.table.length === 4) {
+      st.table = st.table.map((t) => ({ ...t, hidden: false }));
       sendState();
-      runBots();
-      runBotsTick();
-    }, 600);
-    timersRef.current.add(t);
-    return;
-  }
 
-  sendState();           // ← broadcast + persist setiap play
-  sendHandToSeat(seat);  // kirim tangan yang sudah berkurang ke pemiliknya
-  runBotsTick();         // lanjutkan bot bila perlu
+      const t = setTimeout(() => {
+        const win = trickWinner(st.table, st.trump, st.leadSuit);
+
+        try {
+          const lead = st.leadSuit;
+          const plays = st.table.map((t) => ({ player: t.player, card: cardFromId(t.card) }));
+          [0,1,2,3].forEach((s) => { if (!isSeatBot(s)) return;
+            ensureBot(s).observeTrick({ plays, winner: win, trump: st.trump, leadSuit: lead });
+          });
+        } catch {}
+
+        st.tricksWon[win] = (st.tricksWon[win] || 0) + 1;
+        st.table = [];
+        st.leadSuit = null;
+        st.currentPlayer = win;
+
+        const sumHands = st.handSizes.reduce((a,b)=>a+b,0);
+        if (sumHands === 0) { sendState(); finishRoundAndMaybeContinue(); return; }
+
+        sendState();
+        runBots();
+        runBotsTick();
+      }, 600);
+      timersRef.current.add(t);
+      return;
+    }
+
+    sendState();           // ← broadcast + persist setiap play
+    sendHandToSeat(seat);  // kirim tangan yang sudah berkurang ke pemiliknya
+    runBotsTick();         // lanjutkan bot bila perlu
   };
 
   const runBotsTick = () => {
