@@ -1021,13 +1021,11 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
         st.adjustPending = true;
         st.adjustDecider = bestIdx;
         st.adjustChoice = null;
-        [0,1,2,3].forEach((seat) => {
-          sendToastToSeat(seat, `Total bet = 13. Pemenang bidding: P${bestIdx + 1}`);
-        });
       } else {
         st.adjustPending = false;
         st.adjustDecider = null;
         st.adjustChoice = null;
+        st.mode = sum < 13 ? "BAWAH" : "ATAS";
       }
     }
     sendState();
@@ -1324,9 +1322,13 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
       const got = st.tricksWon[i] || 0;
       const tgt = st.targets[i] || 0;
       let delta = 0;
-      if (got === tgt) delta = tgt;
-      else if (got < tgt) delta = st.mode === "ATAS" ? -2 * (tgt - got) : -(tgt - got);
-      else delta = st.mode === "BAWAH" ? -2 * (got - tgt) : -(got - tgt);
+      if (got === tgt) {
+        delta = tgt;
+      } else if (st.mode === "ATAS") {
+        delta = got < tgt ? -2 * (tgt - got) : -(got - tgt);
+      } else if (st.mode === "BAWAH") {
+        delta = got > tgt ? -2 * (got - tgt) : -(tgt - got);
+      }
       st.scores[i] = (st.scores[i] || 0) + delta;
     }
 
@@ -1340,7 +1342,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
     timersRef.current.add(t);
   };
 
-  // Fallback: setelah refresh, pastikan host rehydrate & jalan lagi
   useEffect(() => {
     if (!isHost) return;
     (async () => {
@@ -1348,7 +1349,6 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
         const ok = await hydrateHostFromDB();
         if (!ok) return;
       }
-      // Broadcast supaya klien lain sinkron, lalu lanjutkan bot.
       sendState();
       runBots();
       runBotsTick();
