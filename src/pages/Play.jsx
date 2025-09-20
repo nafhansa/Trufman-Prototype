@@ -199,8 +199,11 @@ export default function Play() {
   const [meId, setMeId] = useState(null);
 
   const [toast, setToast] = useState("");
-
+  
   const [g, setG] = useState({
+    adjustPending: false,
+    adjustDecider: null,
+    adjustChoice: null,
     round: 1,
     dealer: 0,
     phase: "bidding",
@@ -600,6 +603,15 @@ export default function Play() {
 
   const winner = g.phase === "ended" && leaderboard.length ? leaderboard[0] : null;
 
+  // ===== Modal kondisi (hanya pemenang bidding saat total bet = 13 & belum reveal) =====
+  const showAdjustModal =
+    g.phase === "bidding" &&
+    allBidsIn &&
+    !g.bidsRevealed &&
+    sumBids === 13 &&
+    g.adjustPending &&
+    mySeat === g.adjustDecider;
+
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
@@ -737,11 +749,12 @@ export default function Play() {
                 </div>
               );
             })}
+
             <div className="md:col-span-4 flex justify-end">
               <button
                 className="px-4 py-2 rounded-xl text-white font-bold transition disabled:bg-zinc-600 bg-red-700 hover:bg-red-600"
                 onClick={() => chRef.current?.send({ type: "broadcast", event: "start_play" })}
-                disabled={!allBidsIn}
+                disabled={!allBidsIn || g.adjustPending}
               >
                 Mulai Main
               </button>
@@ -825,6 +838,51 @@ export default function Play() {
           </div>
         </div>
       )}
+
+      {/* ===== Modal: Keputusan Pemenang Bidding (Total bet = 13) ===== */}
+      {showAdjustModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70">
+          <div className="w-[480px] max-w-[92vw] rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl">
+            <h2 className="text-xl font-bold text-amber-300 mb-2">
+              Total Bet = 13
+            </h2>
+            <p className="text-stone-200 mb-4">
+              Kamu pemenang bidding. Pilih penyesuaian target semua pemain:
+            </p>
+            <div className="flex gap-3">
+              <button
+                className="flex-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:bg-zinc-600"
+                disabled={!g.adjustPending}
+                onClick={() =>
+                  chRef.current?.send({
+                    type: "broadcast",
+                    event: "adjust_choice",
+                    payload: { from: meRef.current?.id, delta: +1 },
+                  })
+                }
+              >
+                Naik +1 (ATAS)
+              </button>
+              <button
+                className="flex-1 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold disabled:bg-zinc-600"
+                disabled={!g.adjustPending}
+                onClick={() =>
+                  chRef.current?.send({
+                    type: "broadcast",
+                    event: "adjust_choice",
+                    payload: { from: meRef.current?.id, delta: -1 },
+                  })
+                }
+              >
+                Turun -1 (BAWAH)
+              </button>
+            </div>
+            <p className="text-xs text-stone-400 mt-3">
+              Setelah memilih, tombol “Mulai Main” akan aktif.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -901,6 +959,25 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
     return botsRef.current[seat];
   };
 
+  // ====== Handler pilihan penyesuaian (host only) ======
+  const applyAdjustChoice = (fromUser, delta) => {
+    if (!hostState.current) return;
+    const st = hostState.current.publicState;
+    if (!st.adjustPending) return;
+
+    const seat = seatOf(fromUser);
+    if (seat == null || seat !== st.adjustDecider) return; // hanya pemenang bidding yang boleh
+
+    const bids = st.bids || [];
+    const step = delta > 0 ? 1 : -1;
+    st.targets = bids.map((x) => Math.max(0, (x?.count || 0) + step));
+    st.mode = delta > 0 ? "ATAS" : "BAWAH";
+    st.adjustChoice = delta > 0 ? "UP" : "DOWN";
+    st.adjustPending = false;
+
+    sendState();
+  };
+
   // ====== satu pintu memproses bid (dipakai bot & event realtime) ======
   const applyBid = (fromUser, bidPayload) => {
     if (!hostState.current) return;
@@ -911,7 +988,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
       count: Number(bidPayload.count) || 0,
       suit: bidPayload.suit,
       rank: bidPayload.rank,
-    };
+    };  
     hostState.current.publicState.bids[seat] = b;
 
     const bids = hostState.current.publicState.bids;
@@ -933,10 +1010,25 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
       st.trickLeader = bestIdx;
       st.currentPlayer = bestIdx;
 
+      // Aturan baru:
+      // - Default target = bet masing-masing
+      // - Jika total bet = 13 → pemenang memilih +1 / -1
       const sum = bids.reduce((a, x) => a + (x?.count || 0), 0);
-      const mode = sum >= 13 ? "ATAS" : "BAWAH";
-      st.mode = mode;
-      st.targets = bids.map((x) => mode === "ATAS" ? x.count + 1 : Math.max(0, x.count - 1));
+      st.mode = null;
+      st.targets = bids.map((x) => (x?.count || 0));
+
+      if (sum === 13) {
+        st.adjustPending = true;
+        st.adjustDecider = bestIdx;
+        st.adjustChoice = null;
+        [0,1,2,3].forEach((seat) => {
+          sendToastToSeat(seat, `Total bet = 13. Pemenang bidding: P${bestIdx + 1}`);
+        });
+      } else {
+        st.adjustPending = false;
+        st.adjustDecider = null;
+        st.adjustChoice = null;
+      }
     }
     sendState();
   };
@@ -1177,15 +1269,22 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
         leadSuit: null,
         trump: null,
         trumpBroken: false,
+
         mode: null,
         bids: [null, null, null, null],
         bidsRevealed: false,
         targets: [0, 0, 0, 0],
+
         table: [],
         tricksWon: [0, 0, 0, 0],
         scores: prev?.scores ? prev.scores.slice() : [0, 0, 0, 0],
         handSizes: [13, 13, 13, 13],
+
         requireTrumpBroken: rule,
+
+        adjustPending: false,
+        adjustDecider: null,
+        adjustChoice: null,        
       },
     };
 
@@ -1276,6 +1375,13 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
     const onStartPlay = () => {
       if (!hostState.current) return;
       const st = hostState.current.publicState;
+
+      // Lock start kalau masih menunggu keputusan
+      if (st.adjustPending) {
+        [0,1,2,3].forEach((seat) => sendToastToSeat(seat, "Menunggu pemenang bidding pilih Naik +1 / Turun -1"));
+        return;
+      }
+
       st.phase = "play";
       st.bidsRevealed = true;
       st.leadSuit = null;
@@ -1294,6 +1400,9 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
     };
 
     // listeners
+    ch.on("broadcast", { event: "adjust_choice" }, ({ payload }) => {
+      applyAdjustChoice(payload?.from, payload?.delta);
+    });
     ch.on("broadcast", { event: "sync" }, onSync);
     ch.on("broadcast", { event: "bid" }, onBid);
     ch.on("broadcast", { event: "start_play" }, onStartPlay);
