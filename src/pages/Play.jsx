@@ -851,7 +851,7 @@ export default function Play() {
             </p>
             <div className="flex gap-3">
               <button
-                className="flex-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:bg-zinc-600"
+                className="flex-1 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold disabled:bg-zinc-600"
                 disabled={!g.adjustPending}
                 onClick={() =>
                   chRef.current?.send({
@@ -864,7 +864,7 @@ export default function Play() {
                 Naik +1 (ATAS)
               </button>
               <button
-                className="flex-1 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold disabled:bg-zinc-600"
+                className="flex-1 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold disabled:bg-zinc-600"
                 disabled={!g.adjustPending}
                 onClick={() =>
                   chRef.current?.send({
@@ -890,7 +890,7 @@ export default function Play() {
 /* ========================= Host Controller hook ========================= */
 
 function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, persistTimerRef) {
-  const hostState = useRef(null); // { publicState, hands: {0:[],1:[],2:[],3:[]} }
+  const hostState = useRef(null);
   const botsRef = useRef({});
   const lastNonceBySeatRef = useRef({});
   const seatsRef = useRef(seats);
