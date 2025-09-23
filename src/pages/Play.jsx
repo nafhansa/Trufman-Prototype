@@ -106,15 +106,31 @@ function SimpleCardFace({ card }) {
   );
 }
 
-function CardFace({ card, onClick, disabled }) {
+function CardFace({ card, onClick, playable, canPlay, isTurn }) {
   const red = card.suit === "H" || card.suit === "D";
   const colorCls = red ? "is-red" : "is-black";
+
+  // terima 'playable' ATAU 'canPlay'
+  const ok = (typeof playable !== "undefined" ? playable : canPlay) || false;
+
+  // ⬇️ no yellow stroke: buang ring-*, biarin naik + shadow halus aja
+  const raiseCls   = isTurn && ok ? "-translate-y-1 shadow-lg" : "";
+  const hoverCls   = ok ? "hover:-translate-y-2" : "";
+  const disableCls = ok ? "" : "opacity-40 grayscale cursor-not-allowed pointer-events-none";
+
+  const handleKey = (e) => {
+    if (!ok) return;
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick?.(); }
+  };
+
   return (
     <button
-      onClick={onClick}
-      disabled={disabled}
+      onClick={ok ? onClick : undefined}
+      onKeyDown={handleKey}
+      aria-disabled={!ok}
+      tabIndex={ok ? 0 : -1}
+      className={["card-base animate-deal transition-transform duration-150", hoverCls, raiseCls, disableCls].join(" ")}
       title={card.label}
-      className={`card-base animate-deal ${disabled ? "opacity-100 cursor-not-allowed" : "hover:-translate-y-2"}`}
     >
       <div className={`card-face ${colorCls}`}>
         <div className="card-label">{card.label}</div>
@@ -124,6 +140,8 @@ function CardFace({ card, onClick, disabled }) {
     </button>
   );
 }
+
+
 
 function TableSlot({ play }) {
   return (
@@ -188,6 +206,8 @@ function PlayerBidForm({ handBySuit, onSubmit, disabled }) {
 /* ========================= Page ========================= */
 
 export default function Play() {
+  const pendingLocalRemovals = useRef(new Set());
+
   const { id: roomId } = useParams();
   const navigate = useNavigate();
 
@@ -543,6 +563,10 @@ export default function Play() {
     ];
   }, [g.handSizes, mySeat]);
 
+  const isMyTurn =
+    g.phase === "play" && mySeat != null && g.currentPlayer === mySeat;
+
+
   function submitBid(suit, rank) {
     if (mySeat == null) return;
     const bid = { count: betFromRank(rank), suit, rank, from: meRef.current?.id };
@@ -557,7 +581,6 @@ export default function Play() {
 
       const atStart = (g.table?.length ?? 0) === 0;
 
-      // Awal trik
       if (atStart) {
         if (g.requireTrumpBroken && c.suit === g.trump && !g.trumpBroken) {
           const hasNonTrump = (g.myHand || []).some((h) => h.suit !== g.trump);
@@ -566,10 +589,8 @@ export default function Play() {
         return true;
       }
 
-      // Bukan awal trik: default follow-suit wajib
       const hasLead = (g.myHand || []).some((h) => h.suit === g.leadSuit);
       if (hasLead && c.suit !== g.leadSuit) {
-        // mode bebas: boleh menyimpang asal truf
         if (!g.requireTrumpBroken && c.suit === g.trump) return true;
         return false;
       }
@@ -582,13 +603,44 @@ export default function Play() {
   );
 
   function playCard(card) {
-    if (!canPlayCard(card)) return;
-    chRef.current?.send({
-      type: "broadcast",
-      event: "play_card",
-      payload: { from: meRef.current?.id, card: card.id },
-    });
-  }
+  if (!canPlayCard(card)) return;
+
+  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  setG((o) => ({ ...o, myHand: (o.myHand || []).filter((h) => h.id !== card.id) }));
+  pendingLocalRemovals.current.add(card.id);
+
+  chRef.current?.send({
+    type: "broadcast",
+    event: "play_card",
+    payload: { from: meRef.current?.id, card: card.id, nonce },
+  });
+
+  const t = setTimeout(async () => {
+    try {
+      const uid = meRef.current?.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("hands")
+        .select("card")
+        .eq("room_id", roomId)
+        .eq("owner", uid);
+      if (Array.isArray(data)) {
+        const serverHand = new Set(data.map((r) => r.card));
+        if (serverHand.has(card.id)) {
+          setG((o) => {
+            const alreadyHas = o.myHand.some((h) => h.id === card.id);
+            return alreadyHas ? o : { ...o, myHand: [...o.myHand, cardFromId(card.id)] };
+          });
+        }
+      }
+    } finally {
+      pendingLocalRemovals.current.delete(card.id);
+    }
+  }, 1500);
+  timersRef.current.add(t);
+}
+
 
   const targetOrDash = (absSeat) =>
     g.phase === "play" && g.targets[absSeat] !== undefined
@@ -603,7 +655,6 @@ export default function Play() {
 
   const winner = g.phase === "ended" && leaderboard.length ? leaderboard[0] : null;
 
-  // ===== Modal kondisi (hanya pemenang bidding saat total bet = 13 & belum reveal) =====
   const showAdjustModal =
     g.phase === "bidding" &&
     allBidsIn &&
@@ -684,18 +735,29 @@ export default function Play() {
           </div>
 
           {/* my hand */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[95%] z-30">
-            <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow">
-              {(mySeat != null ? seats.find((s) => s.seat === mySeat)?.display_name : "Kamu") || "Kamu"}
-              {" • "}
-              {mySeat != null ? g.tricksWon[mySeat] ?? 0 : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
-            </div>
-            <div className="flex flex-wrap gap-2 items-center justify-center">
-              {myHandSorted.map((c) => (
-                <CardFace key={c.id} card={c} disabled={!canPlayCard(c)} onClick={() => playCard(c)} />
-              ))}
-            </div>
-          </div>
+<div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[95%] z-30">
+  <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow">
+    {(mySeat != null ? seats.find((s) => s.seat === mySeat)?.display_name : "Kamu") || "Kamu"}
+    {" • "}
+    {mySeat != null ? g.tricksWon[mySeat] ?? 0 : 0}/{mySeat != null ? targetOrDash(mySeat) : "–"}
+  </div>
+
+  <div className="flex flex-wrap gap-2 items-center justify-center">
+    {myHandSorted.map((c) => {
+      const can = canPlayCard(c);
+      return (
+        <CardFace
+          key={c.id}
+          card={c}
+          playable={can}       
+          isTurn={isMyTurn}
+          onClick={() => playCard(c)}
+        />
+      );
+    })}
+  </div>
+</div>
+
 
           {/* toast */}
           {toast && (
