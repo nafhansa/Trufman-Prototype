@@ -1258,7 +1258,7 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
         });
       } catch {}
       try { if (persistTimerRef?.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
-    }, 250);
+    }, 400);
   };
 
   const sendState = () => {
