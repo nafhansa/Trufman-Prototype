@@ -640,35 +640,35 @@ export default function TrufmanApp() {
   /* ========================= UI ========================= */
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
-      <div className="mx-auto w-full max-w-[1200px] px-4 py-4">
-        <header className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="text-stone-300 text-sm underline">← Lobby</Link>
-            <h1 className="text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
+      <div className="mx-auto w-full max-w-[1200px] px-2 md:px-4 py-2 md:py-4">
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-0 mb-2 md:mb-3">
+          <div className="flex items-center gap-2 md:gap-3">
+            <Link to="/" className="text-stone-300 text-xs md:text-sm underline">← Lobby</Link>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.7)]">
               Trufman
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <button
               onClick={toggleMusic}
-              className="px-3 py-1.5 rounded-lg text-lg bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
+              className="p-1.5 md:p-1.5 rounded-lg text-base md:text-lg bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
               title={isMusicPlaying ? "Matikan musik" : "Nyalakan musik"}
             >
               {isMusicPlaying ? '🔇' : '🔊'}
             </button>
-            <div className="text-stone-300 text-sm">Dealer: P{dealer + 1} • Ronde: {round}</div>
+            <div className="text-stone-300 text-xs md:text-sm">Dealer: P{dealer + 1} • Ronde: {round}</div>
             <button
               onClick={() => setShowHowTo(true)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
+              className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs font-semibold bg-red-900/50 text-stone-200 border border-red-500/30 hover:bg-red-900/80 transition"
               title="Lihat panduan bermain"
             >
-              How To Play
+              How To
             </button>
           </div>
         </header>
 
-        <div className="relative mx-auto w-full max-w-[1200px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-800 to-red-950 rounded-2xl shadow-inner border-4 border-zinc-950 min-h-[560px] overflow-hidden">
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 text-stone-200 font-semibold drop-shadow">
+        <div className="relative mx-auto w-full max-w-[1200px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-800 to-red-950 rounded-2xl shadow-inner border-4 border-zinc-950 min-h-[560px] md:min-h-[600px] overflow-hidden pb-24 md:pb-0">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 text-stone-200 font-semibold drop-shadow text-xs md:text-base">
             {SeatName[2]} • {tricksWon[2]}/{targetOrDash(2)}
           </div>
           <div className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-stone-200 font-semibold drop-shadow">
@@ -712,71 +712,80 @@ export default function TrufmanApp() {
             total={resolveDelayMs}
           />
 
-          {/* Bottom player hand */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[95%]">
-            <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow">
+          {/* Bottom player hand - Mobile Optimized */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-zinc-900 via-zinc-900 to-transparent pt-2 pb-3 px-2 md:px-4 player-hand-section">
+            <div className="mb-2 text-center text-stone-200 font-semibold drop-shadow text-sm md:text-base">
               Kamu • {tricksWon[0]}/{targetOrDash(0)}
             </div>
-            <div className="flex flex-wrap gap-2 items-center justify-center">
+            {/* Desktop: grid layout */}
+            <div className="hidden md:flex flex-wrap gap-2 items-center justify-center card-container">
               {hands[0]?.map((c) => (
                 <CardFace key={c.id} card={c} disabled={!canPlay(0, c)} onClick={() => onClickCard(c)} />
               ))}
             </div>
+            {/* Mobile: horizontal scroll carousel */}
+            <div className="md:hidden card-carousel">
+              <div className="flex gap-1.5 items-center justify-start min-w-max px-2">
+                {hands[0]?.map((c) => (
+                  <CardFace key={c.id} card={c} disabled={!canPlay(0, c)} onClick={() => onClickCard(c)} />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Info bar + controls */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        {/* Info bar + controls - Mobile optimized */}
+        <div className="mt-2 md:mt-3 flex flex-wrap items-center gap-1 md:gap-2 text-xs md:text-sm">
           <Badge>Fase: {phase}</Badge>
           <Badge>Giliran: P{currentPlayer + 1}</Badge>
           <Badge>Lead: {leadSuit ? SUITS.find((s) => s.key === leadSuit)?.icon : "–"}</Badge>
           <Badge>Truf: {trump ? SUITS.find((s) => s.key === trump)?.icon : "–"}</Badge>
-          <Badge>Truf Broken: {trumpBroken ? "Ya" : "Belum"}</Badge>
-          <Badge>Total Bet: {bidsRevealed ? `${sumBids}/13` : "—/13"} ({mode || "–"})</Badge>
+          <Badge className="hidden md:inline">Truf Broken: {trumpBroken ? "Ya" : "Belum"}</Badge>
+          <Badge>Total: {bidsRevealed ? `${sumBids}/13` : "—/13"} ({mode || "–"})</Badge>
 
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex gap-1 md:gap-2">
             <button
               onClick={resetBotMemory}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-600 text-stone-100 border border-zinc-500 hover:bg-zinc-500 transition"
+              className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs font-medium bg-zinc-600 text-stone-100 border border-zinc-500 hover:bg-zinc-500 transition"
               title="Kosongkan memori taktis bot"
             >
-              Reset Memory
+              Memory
             </button>
             <button
               onClick={resetBotLearning}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-800 text-white border border-red-600 hover:bg-red-700 transition"
+              className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs font-medium bg-red-800 text-white border border-red-600 hover:bg-red-700 transition"
               title="Hapus data training bot (permanen!)"
             >
-              Reset Learning
+              Learning
             </button>
           </div>
         </div>
 
-        {/* Bidding panel */}
+        {/* Bidding panel - Mobile optimized */}
         {phase === "bidding" && (
-          <div className="mx-auto w-full max-w-[1200px] mt-3 grid md:grid-cols-4 gap-3">
+          <div className="mx-auto w-full max-w-[1200px] mt-2 md:mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
             {[0, 1, 2, 3].map((p) => {
               const bid = bids[p];
               const isYou = p === 0;
               const suitIcon = bid ? SUITS.find((s) => s.key === bid.suit)?.icon : "";
               const bidCard = bid ? { id: `BID${p}`, suit: bid.suit, rank: bid.rank, label: `${rankLabel(bid.rank)}${suitIcon}` } : null;
               return (
-                <div key={p} className="bg-zinc-800 rounded-xl shadow p-3 text-stone-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-semibold">P{p + 1} {isYou ? "(Kamu)" : ""}</div>
+                <div key={p} className="bg-zinc-800 rounded-lg md:rounded-xl shadow p-2 md:p-3 text-stone-100 text-xs md:text-sm">
+                  <div className="flex items-center justify-between mb-1 md:mb-2">
+                    <div className="font-semibold">P{p + 1} {isYou ? "(K)" : ""}</div>
                     <Badge>Bid: {bid ? (bidsRevealed ? `${bid.count}${suitIcon}` : "...") : "..."}</Badge>
                   </div>
 
                   {bid ? (
-                    <div className="h-10 flex items-center">
+                    <div className="h-8 md:h-10 flex items-center gap-1">
                       {bidsRevealed ? <SimpleCardFace card={bidCard} disabled /> : <SimpleCardBack small />}
-                      <span className="ml-2 text-xs text-stone-400">{bidsRevealed ? "Terbuka" : "Menunggu..."}</span>
+                      <span className="text-xs text-stone-400">{bidsRevealed ? "Buka" : "Tunggu"}</span>
                     </div>
                   ) : (
                     isYou ? (
                       <PlayerBidForm handBySuit={handBySuit} setBid={setPlayerBid} disabled={!!bids[0]} />
                     ) : (
-                      <div className="text-stone-400 text-sm h-10 flex items-center">Bot sedang memilih...</div>
+                      <div className="text-stone-400 text-xs h-8 md:h-10 flex items-center">Bot...</div>
                     )
                   )}
                 </div>
@@ -796,21 +805,21 @@ export default function TrufmanApp() {
           </div>
         )}
 
-        {/* Scores + Leaderboard */}
-        <div className="mt-4 grid md:grid-cols-2 gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Scores + Leaderboard - Mobile optimized */}
+        <div className="mt-2 md:mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2 md:gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-2 gap-2 md:gap-3">
             {[0, 1, 2, 3].map((p) => (
-              <div key={p} className="bg-zinc-800 rounded-xl shadow p-3">
-                <div className="flex items-center justify-between text-stone-100">
-                  <div className="font-semibold">{p === 0 ? "Skor Kamu" : `Skor ${SeatName[p]}`}</div>
-                  <Badge>Total: {totalScores[p]}</Badge>
+              <div key={p} className="bg-zinc-800 rounded-lg md:rounded-xl shadow p-2 md:p-3 text-xs md:text-sm">
+                <div className="flex items-center justify-between text-stone-100 mb-1">
+                  <div className="font-semibold">{p === 0 ? "Kamu" : `P${p + 1}`}</div>
+                  <Badge>Σ: {totalScores[p]}</Badge>
                 </div>
-                <div className="mt-1 text-sm text-stone-300 grid grid-cols-2 gap-1">
+                <div className="text-stone-300 grid grid-cols-2 gap-1 text-xs">
                   <div>Bid</div>
                   <div className="text-right">
                     {bids[p] ? (bidsRevealed ? `${bids[p].count}${SUITS.find((s) => s.key === bids[p].suit)?.icon}` : "...") : "–"}
                   </div>
-                  <div>Target</div>
+                  <div>Tgt</div>
                   <div className="text-right">{targets[p] ?? "–"}</div>
                   <div>Trik</div>
                   <div className="text-right">{tricksWon[p] ?? 0}</div>
@@ -818,16 +827,16 @@ export default function TrufmanApp() {
               </div>
             ))}
           </div>
-          <div className="bg-zinc-800 rounded-xl shadow p-3">
-            <h3 className="font-semibold text-stone-100 mb-2">Leaderboard</h3>
-            <ol className="space-y-1">
+          <div className="bg-zinc-800 rounded-lg md:rounded-xl shadow p-2 md:p-3">
+            <h3 className="font-semibold text-stone-100 mb-2 text-sm">Leaderboard</h3>
+            <ol className="space-y-0.5">
               {leaderboard.map((row, idx) => (
-                <li key={row.i} className="flex items-center justify-between text-sm p-1 rounded-md bg-zinc-700/50">
-                  <span className="flex items-center gap-2 text-stone-200">
-                    <span className={`inline-flex w-6 h-6 items-center justify-center rounded-full font-bold ${idx === 0 ? 'bg-amber-400 text-zinc-900' : 'bg-zinc-600'}`}>{idx + 1}</span>
-                    <span>{row.name}</span>
+                <li key={row.i} className="flex items-center justify-between text-xs md:text-sm p-1 rounded-md bg-zinc-700/50">
+                  <span className="flex items-center gap-1 md:gap-2 text-stone-200">
+                    <span className={`inline-flex w-5 h-5 md:w-6 md:h-6 items-center justify-center rounded-full font-bold text-xs ${idx === 0 ? 'bg-amber-400 text-zinc-900' : 'bg-zinc-600'}`}>{idx + 1}</span>
+                    <span className="truncate">{row.name}</span>
                   </span>
-                  <span className="font-semibold text-stone-100">{row.score} Poin</span>
+                  <span className="font-semibold text-stone-100">{row.score}</span>
                 </li>
               ))}
             </ol>
@@ -940,10 +949,10 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
   const canSubmit = !disabled && ranks.length > 0;
 
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm w-full">
       <select
         id="bid-suit"
-        className="rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+        className="rounded-md md:rounded-lg border border-zinc-600 px-1 md:px-2 py-0.5 md:py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 text-xs"
         value={suit}
         onChange={(e) => setSuit(e.target.value)}
         disabled={disabled}
@@ -953,7 +962,7 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
 
       <select
         id="bid-rank"
-        className="flex-1 rounded-lg border border-zinc-600 px-2 py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+        className="flex-1 rounded-md md:rounded-lg border border-zinc-600 px-1 md:px-2 py-0.5 md:py-1 bg-zinc-700 text-stone-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 text-xs"
         value={rank}
         onChange={(e) => setRank(Number(e.target.value))}
         disabled={disabled || ranks.length === 0}
@@ -965,7 +974,7 @@ function PlayerBidForm({ handBySuit, setBid, disabled }) {
 
       <button
         type="button"
-        className="px-3 py-1 rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed"
+        className="px-2 md:px-3 py-0.5 md:py-1 rounded-md md:rounded-lg text-white font-semibold transition text-xs bg-red-700 hover:bg-red-600 disabled:bg-zinc-600 disabled:cursor-not-allowed flex-shrink-0"
         disabled={!canSubmit}
         onClick={() => setBid(suit, rank)}
       >
@@ -990,28 +999,28 @@ function RoundSummary({ mode, trump, bids, targets, tricksWon, onNext }) {
   }, [mode, targets, tricksWon]);
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-zinc-800 rounded-2xl shadow-xl w-full max-w-2xl p-4 border border-zinc-700">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-bold text-stone-100">Ronde Selesai</h2>
-          <div className="text-sm text-stone-300">Mode: {mode || "—"} • Truf: {SUITS.find((s) => s.key === trump)?.icon}</div>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 md:p-4 z-50 overflow-y-auto">
+      <div className="bg-zinc-800 rounded-2xl shadow-xl w-full max-w-2xl p-3 md:p-4 border border-zinc-700 my-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 mb-2 md:mb-3">
+          <h2 className="text-lg md:text-xl font-bold text-stone-100">Ronde Selesai</h2>
+          <div className="text-xs md:text-sm text-stone-300">Mode: {mode || "—"} • Truf: {SUITS.find((s) => s.key === trump)?.icon}</div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 text-xs md:text-sm">
           {[0, 1, 2, 3].map((p) => (
-            <div key={p} className="rounded-xl border border-zinc-700 p-3 bg-zinc-900/50">
+            <div key={p} className="rounded-lg md:rounded-xl border border-zinc-700 p-2 md:p-3 bg-zinc-900/50">
               <div className="font-semibold mb-1 text-stone-200">{SeatName[p]}</div>
               <div className="text-stone-300">Bid: {bids[p].count}{SUITS.find((s) => s.key === bids[p].suit)?.icon}</div>
               <div className="text-stone-300">Target: {targets[p]}</div>
               <div className="text-stone-300">Trik: {tricksWon[p]}</div>
-              <div className={`font-bold text-lg mt-1 ${scores[p] > 0 ? 'text-green-400' : (scores[p] < 0 ? 'text-red-400' : 'text-stone-300')}`}>
+              <div className={`font-bold text-base md:text-lg mt-1 ${scores[p] > 0 ? 'text-green-400' : (scores[p] < 0 ? 'text-red-400' : 'text-stone-300')}`}>
                 {scores[p] > 0 ? `+${scores[p]}` : scores[p]}
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-4 flex justify-end">
-          <button onClick={onNext} className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold">
-            Lanjut Ronde Berikutnya
+        <div className="mt-3 md:mt-4 flex justify-end">
+          <button onClick={onNext} className="px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold text-sm md:text-base">
+            Lanjut
           </button>
         </div>
       </div>
@@ -1051,43 +1060,43 @@ function FloatingBotTimer({ visible, ms, player }) {
 /* ===== Modal pilihan ATAS/BAWAH saat total bet = 13 ===== */
 function AdjustChoiceModal({ decider, isYou, onPick, trump, bids }) {
   const title = isYou
-    ? "Total bet = 13. Kamu pemenang bidding — pilih mode:"
-    : `Total bet = 13. Menunggu P${decider + 1} memilih mode…`;
+    ? "Total bet = 13. Pemenang — pilih mode:"
+    : `Total bet = 13. Menunggu P${decider + 1}…`;
 
   const winnerBid = bids?.[decider];
   const suitIcon = winnerBid ? SUITS.find(s => s.key === winnerBid.suit)?.icon : "–";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="w-[520px] max-w-[92vw] rounded-2xl bg-zinc-900 border border-zinc-700 p-6 shadow-2xl">
-        <h2 className="text-lg font-bold text-stone-100 mb-1">{title}</h2>
-        <div className="text-sm text-stone-300 mb-4">
-          Pemenang: P{decider + 1} • Truf sementara: {suitIcon}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 md:p-0">
+      <div className="w-full max-w-sm md:max-w-md rounded-2xl bg-zinc-900 border border-zinc-700 p-4 md:p-6 shadow-2xl">
+        <h2 className="text-base md:text-lg font-bold text-stone-100 mb-1">{title}</h2>
+        <div className="text-xs md:text-sm text-stone-300 mb-4">
+          Pemenang: P{decider + 1} • Truf: {suitIcon}
         </div>
         {isYou ? (
-          <div className="flex gap-2 justify-center">
+          <div className="flex flex-col gap-2 md:gap-3 justify-center">
             <button
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+              className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm md:text-base"
               onClick={() => onPick("ATAS")}
             >
-              Main ATAS (+1)
+              ATAS (+1)
             </button>
             <button
-              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold"
+              className="px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm md:text-base"
               onClick={() => onPick("BAWAH")}
             >
-              Main BAWAH (−1)
+              BAWAH (−1)
             </button>
           </div>
         ) : (
-          <div className="text-stone-400 text-sm text-center">Bot sedang menentukan…</div>
+          <div className="text-stone-400 text-xs md:text-sm text-center">Bot sedang menentukan…</div>
         )}
       </div>
     </div>
   );
 }
 
-/* ===== How To Modal (tetap) ===== */
+/* ===== How To Modal (Mobile optimized) ===== */
 function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
@@ -1099,43 +1108,43 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-2 md:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden"
+        className="w-full max-w-3xl bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden my-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 bg-red-900 text-white flex items-center justify-between">
-          <h3 className="text-lg font-bold">How To Play — Trufman</h3>
+        <div className="px-3 md:px-5 py-3 md:py-4 bg-red-900 text-white flex items-center justify-between">
+          <h3 className="text-base md:text-lg font-bold">How To Play</h3>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25"
+            className="px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-base"
             title="Tutup"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-5 space-y-4 text-sm text-stone-300 max-h-[80vh] overflow-y-auto">
+        <div className="p-3 md:p-5 space-y-3 md:space-y-4 text-xs md:text-sm text-stone-300 max-h-[70vh] overflow-y-auto">
           <section>
-            <h4 className="font-semibold text-stone-100">Tujuan</h4>
-            <p>Setiap pemain menentukan bid lalu mencoba mencapai <em>target</em> triknya. Mode ATAS/BAWAH memengaruhi penalti saat meleset.</p>
+            <h4 className="font-semibold text-stone-100 text-xs md:text-sm">Tujuan</h4>
+            <p className="text-xs md:text-sm">Setiap pemain menentukan bid lalu mencoba mencapai <em>target</em> triknya.</p>
           </section>
 
           <section>
-            <h4 className="font-semibold text-stone-100">Bidding</h4>
-            <ul className="list-disc ml-5 space-y-1">
-              <li>Pilih satu kartu dari tanganmu sebagai bid. Nilai bid: 2–10 = nilainya; J/Q/K = 0; A = 1.</li>
-              <li>Truf adalah suit dari bid tertinggi (seri dipecahkan: nilai &gt; suit C&lt;D&lt;H&lt;S &gt; rank kartu).</li>
-              <li>Semua bid ditutup dulu. Setelah semua memilih, bid dibuka serentak.</li>
+            <h4 className="font-semibold text-stone-100 text-xs md:text-sm">Bidding</h4>
+            <ul className="list-disc ml-4 md:ml-5 space-y-0.5 md:space-y-1 text-xs md:text-sm">
+              <li>Pilih 1 kartu sebagai bid: 2–10 = nilai; J/Q/K = 0; A = 1.</li>
+              <li>Truf = bid tertinggi (seri: nilai &gt; suit &gt; rank).</li>
+              <li>Bid tertutup, dibuka serentak.</li>
             </ul>
-            <div className="mt-2 rounded-lg border border-zinc-700 p-3 bg-zinc-900/40">
-              <div className="font-medium mb-1 text-stone-200">Mapping Nilai Bid</div>
-              <div className="grid grid-cols-7 gap-1 text-xs">
+            <div className="mt-1 md:mt-2 rounded-lg border border-zinc-700 p-2 bg-zinc-900/40">
+              <div className="font-medium mb-1 text-stone-200 text-xs">Nilai Bid</div>
+              <div className="grid grid-cols-7 gap-0.5 text-xs">
                 {ranks.map((r) => (
-                  <div key={r} className="rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-center">
-                    {rankLabel(r)} → {betFromRank(r)}
+                  <div key={r} className="rounded bg-zinc-800 border border-zinc-700 px-1 py-0.5 text-center">
+                    {rankLabel(r)}
                   </div>
                 ))}
               </div>
@@ -1143,44 +1152,37 @@ function HowToPlayModal({ onClose, SUITS, rankLabel, betFromRank }) {
           </section>
 
           <section>
-            <h4 className="font-semibold text-stone-100">Mode & Target</h4>
-            <ul className="list-disc ml-5 space-y-1">
-              <li>Hitung total bid 4 pemain:
-                <ul className="list-disc ml-6 mt-1">
-                  <li><b>&gt; 13</b> → <b>ATAS</b></li>
-                  <li><b>&lt; 13</b> → <b>BAWAH</b></li>
-                  <li><b>= 13</b> → pemenang bidding memilih ATAS/BAWAH</li>
-                </ul>
-              </li>
-              <li><b>Target = bid asli</b> (kecuali jika total = 13 dan pemenang memilih, maka semua target ±1 mengikuti pilihannya).</li>
+            <h4 className="font-semibold text-stone-100 text-xs md:text-sm">Mode & Target</h4>
+            <ul className="list-disc ml-4 md:ml-5 space-y-0.5 md:space-y-1 text-xs md:text-sm">
+              <li>Σ bid &gt; 13 → ATAS | &lt; 13 → BAWAH | = 13 → Pemenang pilih</li>
+              <li>Target = bid asli (±1 jika total = 13)</li>
             </ul>
           </section>
 
           <section>
-            <h4 className="font-semibold text-stone-100">Main Trick</h4>
-            <ul className="list-disc ml-5 space-y-1">
-              <li>Ikuti suit lead jika bisa. Jika tidak bisa, bebas buang (termasuk truf).</li>
-              <li>Tidak boleh <em>lead truf</em> sebelum <b>Truf Broken</b>, kecuali kartu di tanganmu tinggal truf semua.</li>
-              <li><b>Truf Broken</b> terjadi ketika ada yang tidak bisa ikut lead lalu buang truf, atau saat ada yang lead truf (legal).</li>
-              <li>Kartu truf yang dimainkan ditutup dulu di meja, akan terbuka serentak saat 4 kartu lengkap.</li>
+            <h4 className="font-semibold text-stone-100 text-xs md:text-sm">Main Trick</h4>
+            <ul className="list-disc ml-4 md:ml-5 space-y-0.5 md:space-y-1 text-xs md:text-sm">
+              <li>Ikuti suit lead. Jika tidak bisa, bebas buang.</li>
+              <li>Tidak boleh lead truf sebelum Truf Broken.</li>
+              <li>Truf tertutup di meja, terbuka saat 4 kartu lengkap.</li>
             </ul>
           </section>
 
           <section>
-            <h4 className="font-semibold text-stone-100">Skoring</h4>
-            <ul className="list-disc ml-5 space-y-1">
-              <li>Tepat target: +target.</li>
-              <li>Kurang target: <b>ATAS</b> = −2×selisih, <b>BAWAH</b> = −1×selisih.</li>
-              <li>Lebih target: <b>BAWAH</b> = −2×selisih, <b>ATAS</b> = −1×selisih.</li>
+            <h4 className="font-semibold text-stone-100 text-xs md:text-sm">Skoring</h4>
+            <ul className="list-disc ml-4 md:ml-5 space-y-0.5 md:space-y-1 text-xs md:text-sm">
+              <li>Tepat: +target</li>
+              <li>Kurang: ATAS = −2×Δ | BAWAH = −Δ</li>
+              <li>Lebih: BAWAH = −2×Δ | ATAS = −Δ</li>
             </ul>
           </section>
 
-          <div className="pt-2 flex justify-end">
+          <div className="pt-2 md:pt-3 flex justify-end">
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold"
+              className="px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold text-sm md:text-base"
             >
-              Paham Bung
+              Oke
             </button>
           </div>
         </div>
