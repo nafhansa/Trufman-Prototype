@@ -6,8 +6,8 @@ Trufman adalah game kartu kecil yang memamerkan product thinking, UI rapi, dan b
 ## 🎮 Cara Main (Singkat)
 - 4 pemain: kamu + 3 bot.
 - Bid 1 kartu (nilai 2–10 = angka, J/Q/K = 0, A = 1). Bid tertinggi menentukan trump (C < D < H < S).
-- Mode: ATAS jika total bid ≥ 13 (target = bid+1), BAWAH jika < 13 (target = bid−1, min 0).
-- Ikuti suit lead jika bisa; trump boleh dimainkan jika tidak bisa ikut suit atau setelah trump broken.
+- Mode: ATAS jika total bid ≥ 13 (target = bid), BAWAH jika < 13 (target = bid).
+- Ikuti suit lead jika bisa; trump boleh dimainkan jika tidak bisa ikut suit atau setelah trump broken (sesuai tongkrongan).
 - Skor: tepat target = +target; miss/over penalti tergantung mode.
 
 
