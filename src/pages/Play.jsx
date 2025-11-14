@@ -292,14 +292,45 @@ export default function Play() {
 
   const goBack = useCallback(
     (to = "/") => {
-      try { if (chRef.current) supabase.removeChannel(chRef.current); } catch {}
-      try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
-      try { supabase.getChannels().forEach((c) => supabase.removeChannel(c)); } catch {}
-      try { for (const t of timersRef.current) clearTimeout(t); timersRef.current.clear(); } catch {}
-      try { if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; } } catch {}
+      // Comprehensive cleanup
+      try { 
+        if (chRef.current) {
+          supabase.removeChannel(chRef.current);
+          chRef.current = null;
+        }
+      } catch {}
+      try { 
+        if (pgHandsRef.current) {
+          supabase.removeChannel(pgHandsRef.current);
+          pgHandsRef.current = null;
+        }
+      } catch {}
+      try { 
+        const channels = supabase.getChannels();
+        channels.forEach((c) => {
+          if (c.topic.includes(roomId)) {
+            supabase.removeChannel(c);
+          }
+        });
+      } catch {}
+      try { 
+        for (const t of timersRef.current) clearTimeout(t); 
+        timersRef.current.clear(); 
+      } catch {}
+      try { 
+        if (persistTimerRef.current) { 
+          clearTimeout(persistTimerRef.current); 
+          persistTimerRef.current = null; 
+        } 
+      } catch {}
+      
+      // Clear refs
+      pendingLocalRemovals.current.clear();
+      meRef.current = null;
+      
       navigate(to, { replace: true });
     },
-    [navigate]
+    [navigate, roomId]
   );
 
   // initial data
@@ -407,7 +438,10 @@ export default function Play() {
       const cards = Array.isArray(payload?.cards) ? payload.cards : payload;
       if (userId && userId !== meRef.current?.id) return;
       if (!Array.isArray(cards)) return;
-      setG((o) => ({ ...o, myHand: cards.map(cardFromId) }));
+      setG((o) => ({ 
+        ...o, 
+        myHand: cards.map(cardFromId).filter(c => !pendingLocalRemovals.current.has(c.id))
+      }));
     });
 
     ch.on("broadcast", { event: "toast" }, ({ payload }) => {
@@ -602,44 +636,49 @@ export default function Play() {
     ]
   );
 
+  const playingCardRef = useRef(false);
+  
   function playCard(card) {
-  if (!canPlayCard(card)) return;
+    if (!canPlayCard(card)) return;
+    if (playingCardRef.current) return; // Prevent double-play
+    
+    playingCardRef.current = true;
+    const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setG((o) => ({ ...o, myHand: (o.myHand || []).filter((h) => h.id !== card.id) }));
+    pendingLocalRemovals.current.add(card.id);
 
-  setG((o) => ({ ...o, myHand: (o.myHand || []).filter((h) => h.id !== card.id) }));
-  pendingLocalRemovals.current.add(card.id);
+    chRef.current?.send({
+      type: "broadcast",
+      event: "play_card",
+      payload: { from: meRef.current?.id, card: card.id, nonce },
+    });
 
-  chRef.current?.send({
-    type: "broadcast",
-    event: "play_card",
-    payload: { from: meRef.current?.id, card: card.id, nonce },
-  });
-
-  const t = setTimeout(async () => {
-    try {
-      const uid = meRef.current?.id;
-      if (!uid) return;
-      const { data } = await supabase
-        .from("hands")
-        .select("card")
-        .eq("room_id", roomId)
-        .eq("owner", uid);
-      if (Array.isArray(data)) {
-        const serverHand = new Set(data.map((r) => r.card));
-        if (serverHand.has(card.id)) {
-          setG((o) => {
-            const alreadyHas = o.myHand.some((h) => h.id === card.id);
-            return alreadyHas ? o : { ...o, myHand: [...o.myHand, cardFromId(card.id)] };
-          });
+    const t = setTimeout(async () => {
+      try {
+        const uid = meRef.current?.id;
+        if (!uid) return;
+        const { data } = await supabase
+          .from("hands")
+          .select("card")
+          .eq("room_id", roomId)
+          .eq("owner", uid);
+        if (Array.isArray(data)) {
+          const serverHand = new Set(data.map((r) => r.card));
+          if (serverHand.has(card.id)) {
+            setG((o) => {
+              const alreadyHas = o.myHand.some((h) => h.id === card.id);
+              return alreadyHas ? o : { ...o, myHand: [...o.myHand, cardFromId(card.id)] };
+            });
+          }
         }
+      } finally {
+        pendingLocalRemovals.current.delete(card.id);
+        playingCardRef.current = false;
       }
-    } finally {
-      pendingLocalRemovals.current.delete(card.id);
-    }
-  }, 1500);
-  timersRef.current.add(t);
-}
+    }, 1500);
+    timersRef.current.add(t);
+  }
 
 
   const targetOrDash = (absSeat) =>
@@ -662,6 +701,22 @@ export default function Play() {
     sumBids === 13 &&
     g.adjustPending &&
     mySeat === g.adjustDecider;
+
+  // Auto-close modal for bot deciders
+  useEffect(() => {
+    if (g.phase === "bidding" && allBidsIn && sumBids === 13 && g.adjustPending) {
+      if (g.adjustDecider !== mySeat && g.adjustDecider != null) {
+        // Bot akan decide, tunggu sebentar
+        const timer = setTimeout(() => {
+          // Modal sudah bisa ditutup karena bot sudah memilih
+          if (!g.adjustPending) {
+            setToast("Pemenang bidding sudah memilih mode");
+          }
+        }, 1500);
+        timersRef.current.add(timer);
+      }
+    }
+  }, [g.phase, allBidsIn, sumBids, g.adjustPending, g.adjustDecider, mySeat]);
 
   return (
     <div className="min-h-screen w-screen bg-zinc-900 text-stone-800">
@@ -1097,8 +1152,10 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
   const applyPlay = async (fromUser, cardId, nonce) => {
     if (nonce) {
       const seat = seatOf(fromUser);
-      if (lastNonceBySeatRef.current[seat] === nonce) return;
-      lastNonceBySeatRef.current[seat] = nonce;
+      if (seat != null) {
+        if (lastNonceBySeatRef.current[seat] === nonce) return;
+        lastNonceBySeatRef.current[seat] = nonce;
+      }
     }
 
     if (!hostState.current) return;
@@ -1129,13 +1186,17 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
       }
       st.leadSuit = suit;
     } else {
-      // Follow-suit
+      // Follow-suit validation yang lebih ketat
       const hasLead = hand.some((id) => cardFromId(id).suit === st.leadSuit);
       if (hasLead && suit !== st.leadSuit) {
-        if (st.requireTrumpBroken) { sendToastToSeat(seat, "Harus ikut warna (follow suit)!"); return; }
-        if (suit !== st.trump) { sendToastToSeat(seat, "Kalau mau menyimpang, harus ngetruf."); return; }
+        // Harus follow suit
+        sendToastToSeat(seat, "Harus ikut warna (follow suit)!");
+        return;
       }
-      if (suit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) st.trumpBroken = true;
+      // Trump broken check
+      if (suit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) {
+        st.trumpBroken = true;
+      }
     }
 
     // mainkan kartu
@@ -1448,6 +1509,10 @@ function useHostController(isHost, roomId, seats, chRef, timersRef, roomInfo, pe
       st.bidsRevealed = true;
       st.leadSuit = null;
       st.currentPlayer = typeof st.trickLeader === "number" ? st.trickLeader : (st.dealer + 1) % 4;
+      
+      // Reset nonce tracking untuk round baru
+      lastNonceBySeatRef.current = {};
+      
       sendState();
       sendAllHands();
       runBots();

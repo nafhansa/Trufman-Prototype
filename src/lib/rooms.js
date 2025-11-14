@@ -159,8 +159,17 @@ export async function addBotToSeat(roomId, seat) {
     const { error: insErr } = await supabase
       .from("bot_user_map")
       .insert({ bot_id: botId, bot_uid });
-    if (insErr) throw insErr;
-    map = { bot_uid };
+    if (insErr) {
+      // Jika conflict, coba ambil lagi
+      const { data: retry } = await supabase
+        .from("bot_user_map")
+        .select("bot_uid")
+        .eq("bot_id", botId)
+        .maybeSingle();
+      map = retry || { bot_uid: crypto.randomUUID() };
+    } else {
+      map = { bot_uid };
+    }
   }
 
   const { error } = await supabase.from("room_seats").insert({
@@ -170,14 +179,17 @@ export async function addBotToSeat(roomId, seat) {
     is_bot: true,
     display_name: `Bot P${s + 1}`,
   });
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505") throw new Error("Seat sudah diambil");
+    throw error;
+  }
 }
 
 export async function removeBotByUserId(roomId, userId) {
   const { error } = await supabase
     .from("room_seats")
     .delete()
-    .match({ room_id: roomId, user_id, is_bot: true });
+    .match({ room_id: roomId, user_id: userId, is_bot: true });
   if (error) throw error;
 }
 

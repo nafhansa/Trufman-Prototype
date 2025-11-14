@@ -143,6 +143,7 @@ export function maybeRunBots({
   const schedule  = (fn, ms = 120) => {
     const t = setTimeout(fn, ms);
     try { timersRef?.current?.add?.(t); } catch {}
+    return t;
   };
 
   // Minimal SUITS utk bot.getState
@@ -165,34 +166,57 @@ export function maybeRunBots({
     const hand    = handIds.map(toBotCardObj);
 
     schedule(() => {
-      const bid = bot.chooseBid(hand);              // { suit, rank, count }
-      st.bids[nextBotSeat] = {                      // tulis bid bot
-        suit: bid.suit,
-        rank: bid.rank,
-        count: bid.count,
-      };
+      try {
+        const bid = bot.chooseBid(hand);              // { suit, rank, count }
+        st.bids[nextBotSeat] = {                      // tulis bid bot
+          suit: bid.suit,
+          rank: bid.rank,
+          count: bid.count,
+        };
 
-      // jika semua bid masuk → finalize trump/mode/targets
-      if (st.bids.every(Boolean)) {
-        let bestIdx = 0;
-        for (let i = 1; i < 4; i++) {
-          const bi = st.bids[i], bb = st.bids[bestIdx];
-          if (bi.rank > bb.rank || (bi.rank === bb.rank && suitOrder[bi.suit] > suitOrder[bb.suit])) bestIdx = i;
+        // jika semua bid masuk → finalize trump/mode/targets
+        if (st.bids.every(Boolean)) {
+          let bestIdx = 0;
+          for (let i = 1; i < 4; i++) {
+            const bi = st.bids[i], bb = st.bids[bestIdx];
+            const biSuit = suitOrder[bi.suit] ?? -1;
+            const bbSuit = suitOrder[bb.suit] ?? -1;
+            if (
+              bi.count > bb.count ||
+              (bi.count === bb.count && biSuit > bbSuit) ||
+              (bi.count === bb.count && biSuit === bbSuit && bi.rank > bb.rank)
+            ) bestIdx = i;
+          }
+          st.trump   = st.bids[bestIdx].suit;
+          st.trickLeader = bestIdx;
+          const sum  = st.bids.reduce((a, x) => a + (x?.count || 0), 0);
+          
+          // Handle adjust logic untuk total = 13
+          if (sum === 13) {
+            st.adjustPending = true;
+            st.adjustDecider = bestIdx;
+            st.adjustChoice = null;
+            st.targets = st.bids.map((x) => (x?.count || 0));
+            st.mode = null;
+          } else {
+            st.adjustPending = false;
+            st.adjustDecider = null;
+            st.adjustChoice = null;
+            st.mode = sum < 13 ? "BAWAH" : "ATAS";
+            st.targets = st.bids.map((x) => (x?.count || 0));
+          }
         }
-        st.trump   = st.bids[bestIdx].suit;
-        const sum  = st.bids.reduce((a, x) => a + (x?.count || 0), 0);
-        const mode = sum >= 13 ? "ATAS" : "BAWAH";
-        st.mode    = mode;
-        st.targets = st.bids.map((x) => (mode === "ATAS" ? x.count + 1 : Math.max(0, x.count - 1)));
+
+        sendState();
+
+        // <- penting: panggil lagi supaya bot lain ikut bid
+        schedule(() => maybeRunBots({
+          hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+        }), 60);
+      } catch (err) {
+        console.error("Bot bidding error:", err);
       }
-
-      sendState();
-
-      // <- penting: panggil lagi supaya bot lain ikut bid
-      schedule(() => maybeRunBots({
-        hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
-      }), 60);
-    });
+    }, Math.floor(250 + Math.random() * 350));
 
     return;
   }
@@ -208,104 +232,115 @@ export function maybeRunBots({
   if (!handIds.length) return;
 
   schedule(() => {
-    const hand        = handIds.map(toBotCardObj);
-    const leadSuit    = st.leadSuit;
-    const trump       = st.trump;
-    const pos         = st.table.length;
-    const need        = (st.targets?.[seat] ?? 0) - (st.tricksWon?.[seat] ?? 0);
-    const table       = (st.table || []).map((pl) => ({ player: pl.player, card: toBotCardObj(pl.card) }));
-    const trumpBroken = !!st.trumpBroken;
-    const handCounts  = st.handSizes?.slice?.() || [13,13,13,13];
+    try {
+      const hand        = handIds.map(toBotCardObj);
+      const leadSuit    = st.leadSuit;
+      const trump       = st.trump;
+      const pos         = st.table.length;
+      const need        = (st.targets?.[seat] ?? 0) - (st.tricksWon?.[seat] ?? 0);
+      const table       = (st.table || []).map((pl) => ({ player: pl.player, card: toBotCardObj(pl.card) }));
+      const trumpBroken = !!st.trumpBroken;
+      const handCounts  = st.handSizes?.slice?.() || [13,13,13,13];
 
-    const picked = bot.pickCard({
-      hand, leadSuit, trump, table, seen: [], voidMap: null,
-      need, pos, mode: st.mode, seat, handCounts, trumpBroken,
-    });
+      const picked = bot.pickCard({
+        hand, leadSuit, trump, table, seen: [], voidMap: null,
+        need, pos, mode: st.mode, seat, handCounts, trumpBroken,
+      });
 
-    const chosen       = picked || hand[0];
-    const chosenGameId = fromBotCardObj(chosen);
-    const idx          = hostState.current.hands[seat].indexOf(chosenGameId);
-    if (idx < 0) return;
+      const chosen       = picked || hand[0];
+      const chosenGameId = fromBotCardObj(chosen);
+      const idx          = hostState.current.hands[seat].indexOf(chosenGameId);
+      if (idx < 0) {
+        console.warn("Bot tried to play card not in hand:", chosenGameId);
+        return;
+      }
 
-    const chosenSuit = gameIdToParts(chosenGameId).suit;
+      const chosenSuit = gameIdToParts(chosenGameId).suit;
 
-    // mirror validasi host onPlayCard (lead & follow suit)
-    if (st.table.length === 0) {
-      if (chosenSuit === st.trump && !st.trumpBroken) {
-        const hasNonTrump = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit !== st.trump);
-        if (hasNonTrump) {
-          const alt = hostState.current.hands[seat]
-            .filter((id) => gameIdToParts(id).suit !== st.trump)
-            .map((id) => ({ id, ...gameIdToParts(id) }))
-            .sort((a,b)=>a.rank-b.rank)[0];
-          const altId = alt ? alt.id : chosenGameId;
-          const altSuit = alt ? alt.suit : chosenSuit;
-          const k = hostState.current.hands[seat].indexOf(altId);
-          if (k >= 0) hostState.current.hands[seat].splice(k, 1);
-          st.leadSuit = altSuit;
-          if (altSuit === st.trump) st.trumpBroken = true;
-          st.table.push({ player: seat, card: altId, hidden: altSuit === st.trump });
+      // mirror validasi host onPlayCard (lead & follow suit)
+      if (st.table.length === 0) {
+        if (st.requireTrumpBroken && chosenSuit === st.trump && !st.trumpBroken) {
+          const hasNonTrump = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit !== st.trump);
+          if (hasNonTrump) {
+            const alt = hostState.current.hands[seat]
+              .filter((id) => gameIdToParts(id).suit !== st.trump)
+              .map((id) => ({ id, ...gameIdToParts(id) }))
+              .sort((a,b)=>a.rank-b.rank)[0];
+            const altId = alt ? alt.id : chosenGameId;
+            const altSuit = alt ? alt.suit : chosenSuit;
+            const k = hostState.current.hands[seat].indexOf(altId);
+            if (k >= 0) hostState.current.hands[seat].splice(k, 1);
+            st.leadSuit = altSuit;
+            if (altSuit === st.trump) st.trumpBroken = true;
+            st.table.push({ player: seat, card: altId, hidden: altSuit === st.trump });
+          } else {
+            st.trumpBroken = true;
+            st.leadSuit = chosenSuit;
+            hostState.current.hands[seat].splice(idx, 1);
+            st.table.push({ player: seat, card: chosenGameId, hidden: true });
+          }
         } else {
-          st.trumpBroken = true;
           st.leadSuit = chosenSuit;
+          if (chosenSuit === st.trump && !st.trumpBroken) st.trumpBroken = true;
           hostState.current.hands[seat].splice(idx, 1);
-          st.table.push({ player: seat, card: chosenGameId, hidden: true });
+          st.table.push({ player: seat, card: chosenGameId, hidden: chosenSuit === st.trump });
         }
       } else {
-        st.leadSuit = chosenSuit;
-        hostState.current.hands[seat].splice(idx, 1);
-        st.table.push({ player: seat, card: chosenGameId, hidden: false });
+        const hasLead = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit === st.leadSuit);
+        let finalId = chosenGameId, finalSuit = chosenSuit;
+
+        if (hasLead && chosenSuit !== st.leadSuit) {
+          const followMin = hostState.current.hands[seat]
+            .filter((id) => gameIdToParts(id).suit === st.leadSuit)
+            .map((id) => ({ id, ...gameIdToParts(id) }))
+            .sort((a,b)=>a.rank-b.rank)[0];
+          if (followMin) { finalId = followMin.id; finalSuit = followMin.suit; }
+        } else if (chosenSuit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) {
+          st.trumpBroken = true;
+        }
+
+        const k = hostState.current.hands[seat].indexOf(finalId);
+        if (k >= 0) hostState.current.hands[seat].splice(k, 1);
+        st.table.push({ player: seat, card: finalId, hidden: finalSuit === st.trump });
       }
-    } else {
-      const hasLead = hostState.current.hands[seat].map(gameIdToParts).some((x) => x.suit === st.leadSuit);
-      let finalId = chosenGameId, finalSuit = chosenSuit;
 
-      if (hasLead && chosenSuit !== st.leadSuit) {
-        const followMin = hostState.current.hands[seat]
-          .filter((id) => gameIdToParts(id).suit === st.leadSuit)
-          .map((id) => ({ id, ...gameIdToParts(id) }))
-          .sort((a,b)=>a.rank-b.rank)[0];
-        if (followMin) { finalId = followMin.id; finalSuit = followMin.suit; }
-      } else if (chosenSuit === st.trump && st.leadSuit !== st.trump && !st.trumpBroken) {
-        st.trumpBroken = true;
-      }
+      st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
+      st.currentPlayer = (st.currentPlayer + 1) % 4;
+      sendState();
+      sendHandToSeat(seat);
 
-      const k = hostState.current.hands[seat].indexOf(finalId);
-      if (k >= 0) hostState.current.hands[seat].splice(k, 1);
-      st.table.push({ player: seat, card: finalId, hidden: finalSuit === st.trump });
-    }
-
-    st.handSizes[seat] = Math.max(0, (st.handSizes[seat] || 0) - 1);
-    st.currentPlayer = (st.currentPlayer + 1) % 4;
-    sendState();
-    sendHandToSeat(seat);
-
-    if (st.table.length === 4) {
-      schedule(() => {
-        st.table = st.table.map((t) => ({ ...t, hidden: false }));
-        sendState();
-
+      if (st.table.length === 4) {
         schedule(() => {
-          const win = trickWinner(st.table, st.trump, st.leadSuit);
-          st.tricksWon[win] = (st.tricksWon[win] || 0) + 1;
-          st.table = [];
-          st.leadSuit = null;
-          st.currentPlayer = win;
+          st.table = st.table.map((t) => ({ ...t, hidden: false }));
           sendState();
 
-          // lanjutkan lagi kalau next player bot
-          schedule(() => maybeRunBots({
-            hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
-          }), 80);
-        }, 280);
-      }, 200);
-    } else {
-      // meja belum penuh → coba jalanin bot berikutnya kalau bot juga
-      schedule(() => maybeRunBots({
-        hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
-      }), 80);
+          schedule(() => {
+            const win = trickWinner(st.table, st.trump, st.leadSuit);
+            st.tricksWon[win] = (st.tricksWon[win] || 0) + 1;
+            st.table = [];
+            st.leadSuit = null;
+            st.currentPlayer = win;
+            sendState();
+
+            // lanjutkan lagi kalau next player bot
+            schedule(() => maybeRunBots({
+              hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+            }), 80);
+          }, 280);
+        }, 200);
+      } else {
+        // meja belum penuh → coba jalanin bot berikutnya kalau bot juga
+        schedule(() => maybeRunBots({
+          hostState, seats, timersRef, sendState, sendHandToSeat, trickWinner, roomId,
+        }), 80);
+      }
+    } catch (err) {
+      console.error("Bot play error:", err);
+      // Fallback: skip turn
+      st.currentPlayer = (st.currentPlayer + 1) % 4;
+      sendState();
     }
-  });
+  }, Math.floor(350 + Math.random() * 550));
 }
 
 /* =========================================================

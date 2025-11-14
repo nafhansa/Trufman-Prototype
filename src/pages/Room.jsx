@@ -113,21 +113,45 @@ export default function Room() {
   }, [state?.status, roomId, navigate]);
 
   async function onClaim(i) {
-    try { await claimSeat(roomId, i); }
-    catch (e) { alert(e.message || "Gagal claim kursi (mungkin sudah terisi)"); }
+    try { 
+      setErr("");
+      await claimSeat(roomId, i); 
+    }
+    catch (e) { 
+      setErr(e.message || "Gagal claim kursi");
+      alert(e.message || "Gagal claim kursi (mungkin sudah terisi)"); 
+    }
   }
   async function onRelease(i) {
-    try { await releaseSeat(roomId, i); }
-    catch (e) { alert(e.message || "Gagal release kursi"); }
+    try { 
+      setErr("");
+      await releaseSeat(roomId, i); 
+    }
+    catch (e) { 
+      setErr(e.message || "Gagal release kursi");
+      alert(e.message || "Gagal release kursi"); 
+    }
   }
 
   async function onAddBot(i) {
-    try { await addBotToSeat(roomId, i); }
-    catch (e) { alert(e.message || "Gagal add bot"); }
+    try { 
+      setErr("");
+      await addBotToSeat(roomId, i); 
+    }
+    catch (e) { 
+      setErr(e.message || "Gagal add bot");
+      alert(e.message || "Gagal add bot"); 
+    }
   }
   async function onRemoveBot(userId) {
-    try { await removeBotByUserId(roomId, userId); }
-    catch (e) { alert(e.message || "Gagal remove bot"); }
+    try { 
+      setErr("");
+      await removeBotByUserId(roomId, userId); 
+    }
+    catch (e) { 
+      setErr(e.message || "Gagal remove bot");
+      alert(e.message || "Gagal remove bot"); 
+    }
   }
 
   const takenBy   = (i) => seats.find((s) => s.seat === i);
@@ -138,9 +162,15 @@ export default function Room() {
 
   const handleStart = async () => {
     try {
+      setErr("");
+      if (!canStart) {
+        alert("Butuh 4 pemain untuk memulai game");
+        return;
+      }
       await startGame(roomId);
-      navigate(`/play/${roomId}`);
+      // Redirect akan otomatis terjadi karena useEffect yang memantau state.status
     } catch (e) {
+      setErr(e.message || "Gagal memulai game");
       alert(e.message || "Gagal memulai game");
     }
   };
@@ -148,11 +178,13 @@ export default function Room() {
   async function onToggleRule() {
     if (!isHost) return;
     try {
+      setErr("");
       setSavingOpt(true);
       await updateRoomOptions(roomId, { requireTrumpBroken: !requireTrumpBroken });
       const st = await fetchState(roomId);
       setState(st);
     } catch (e) {
+      setErr(e.message || "Gagal menyimpan opsi");
       alert(e.message || "Gagal menyimpan opsi");
     } finally {
       setSavingOpt(false);

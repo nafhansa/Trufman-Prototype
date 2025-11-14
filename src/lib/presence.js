@@ -11,17 +11,26 @@ export async function joinRoomPresence(roomId, meta = {}, onChange) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // key presence = user.id (biar satu device per user)
+  const presenceKey = user?.id || `anon-${crypto.randomUUID()}`;
   const channel = supabase.channel(`presence:room:${roomId}`, {
-    config: { presence: { key: user?.id || crypto.randomUUID() } },
+    config: { presence: { key: presenceKey } },
   });
 
   const emitList = () => {
     // presenceState() -> { userId: [metas...] }
     const state = channel.presenceState();
-    const list = Object.entries(state).map(([user_id, metas]) => ({
-      user_id,
-      ...metas[metas.length - 1], // ambil meta terakhir
-    }));
+    const seen = new Set();
+    const list = Object.entries(state)
+      .map(([user_id, metas]) => {
+        const key = `${user_id}`;
+        if (seen.has(key)) return null;
+        seen.add(key);
+        return {
+          user_id,
+          ...metas[metas.length - 1], // ambil meta terakhir
+        };
+      })
+      .filter(Boolean);
     onChange?.(list);
   };
 
