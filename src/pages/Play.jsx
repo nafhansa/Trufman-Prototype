@@ -491,42 +491,29 @@ export default function Play() {
             table: (s.table || []).map((t) => ({ ...t })),
           }));
         }
+        // Fetch my hand snapshot too (only when WS is not joined)
+        const uid = meRef.current?.id;
+        if (uid) {
+          const { data: myRows } = await supabase
+            .from("hands")
+            .select("card")
+            .eq("room_id", roomId)
+            .eq("owner", uid);
+          if (Array.isArray(myRows)) {
+            const list = myRows.map((r) => r.card);
+            setG((old) => ({
+              ...old,
+              myHand: list.map(cardFromId).filter(c => !pendingLocalRemovals.current.has(c.id))
+            }));
+          }
+        }
       } catch {}
     }, 1000);
     return () => { stopped = true; clearInterval(iv); };
   }, [roomId, isRealtimeJoined]);
 
-  // Postgres Changes: my hand
-  useEffect(() => {
-    if (!meRef.current?.id) return;
-    const uid = meRef.current.id;
-    const chan = supabase
-      .channel(`room:${roomId}:hands:${uid}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "hands",
-          filter: `room_id=eq.${roomId} AND owner=eq.${uid}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const c = cardFromId(payload.new.card);
-            setG((o) => ({ ...o, myHand: [...(o.myHand || []), c] }));
-          } else if (payload.eventType === "DELETE") {
-            const id = payload.old.card;
-            setG((o) => ({ ...o, myHand: (o.myHand || []).filter((h) => h.id !== id) }));
-          }
-        }
-      )
-      .subscribe();
-
-    pgHandsRef.current = chan;
-    return () => {
-      try { if (pgHandsRef.current) supabase.removeChannel(pgHandsRef.current); } catch {}
-    };
-  }, [roomId, meId]);
+  // (Removed) Postgres changes for hands to avoid double updates causing flicker.
+  // We rely on host broadcast for hands; fallback polling will re-fetch snapshot if WS disconnected.
 
   // ====== SFX when a new card appears on table (no trump-break SFX) ======
   const firstTableHydrate = useRef(true);
@@ -624,10 +611,8 @@ export default function Play() {
       }
 
       const hasLead = (g.myHand || []).some((h) => h.suit === g.leadSuit);
-      if (hasLead && c.suit !== g.leadSuit) {
-        if (!g.requireTrumpBroken && c.suit === g.trump) return true;
-        return false;
-      }
+  // Selalu wajib follow suit jika masih punya
+  if (hasLead && c.suit !== g.leadSuit) return false;
       return true;
     },
     [
