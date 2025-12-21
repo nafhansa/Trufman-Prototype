@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 import { db, auth } from "../../firebase";
+import { calculateBotBid, getBestMove } from '../../utils/botAI';
 import {
   doc,
   onSnapshot,
@@ -253,14 +254,12 @@ export default function Room() {
             const seatIdx = roomData.seats.indexOf(botSeat);
             const hand = botSeat.hand || [];
             if (hand.length > 0) {
-              const handSum = hand.reduce((sum, c) => sum + GetCardBiddingValue(c), 0);
-              let targetBidValue = Math.floor(handSum / 7);
-              targetBidValue = Math.max(0, Math.min(10, targetBidValue));
+              const botBid = calculateBotBid(hand, roomData.trufSuit);
 
-              // Bot Intelligence: Pick card closest to target
+              // Find card in hand that matches this bid value or is closest
               const bestBidCard = hand.reduce((prev, curr) => {
-                const prevDiff = Math.abs(GetCardBiddingValue(prev) - targetBidValue);
-                const currDiff = Math.abs(GetCardBiddingValue(curr) - targetBidValue);
+                const prevDiff = Math.abs(GetCardBiddingValue(prev) - botBid);
+                const currDiff = Math.abs(GetCardBiddingValue(curr) - botBid);
                 return currDiff < prevDiff ? curr : prev;
               });
               newBets[seatIdx] = bestBidCard;
@@ -317,7 +316,8 @@ export default function Room() {
             totalBids: totalBidsSum,
             bids: newBids,
             tricksWon: { 0: 0, 1: 0, 2: 0, 3: 0 },
-            isTrumpBroken: false
+            isTrumpBroken: false,
+            playedCards: [] // Initialize history
           });
 
           // --- STEP 2: Reveal Animation (Jeda 1.5 Detik biar lebih kerasa) ---
@@ -342,14 +342,10 @@ export default function Room() {
           const hand = [...(currentPlayer.hand || [])];
           if (hand.length === 0) return;
 
-          // Bot Logic: Use unified validation to pick a card
+          // Bot Logic: Use smart AI with card history
           const trufSuit = roomData.trufSuit || '♠️';
-          const validMoves = GetValidMoves(hand, roomData.currentTrick || [], trufSuit, roomData.isTrumpBroken);
-
-          if (validMoves.length === 0) return;
-
-          // Pick a card (Bot Strategy: just pick the first valid one for now)
-          const cardToPlay = validMoves[0];
+          const history = roomData.playedCards || [];
+          const cardToPlay = getBestMove(hand, roomData.currentTrick || [], trufSuit, roomData.isTrumpBroken, history);
           const isFaceDown = cardToPlay.suit === trufSuit;
           const isLead = (roomData.currentTrick || []).length === 0;
 
@@ -453,10 +449,16 @@ export default function Room() {
 
       const nextTrickCount = (roomData.trickCount || 1) + 1;
 
+      // Save trick to history for Bot Memory
+      const cardsInTrick = finishedTrick.map(t => ({ suit: t.card.suit, value: t.card.value }));
+      const currentHistory = roomData.playedCards || [];
+      const updatedHistory = [...currentHistory, ...cardsInTrick];
+
       let updateFields = {
         currentTrick: [],
         trickCount: nextTrickCount,
         tricksWon: updatedWon,
+        playedCards: updatedHistory,
         lastAction: {
           player: 'System',
           move: `${roomData.seats[winnerSeatIdx].name} Wins Trick!`
@@ -557,6 +559,7 @@ export default function Room() {
       bids: {},
       tricksWon: { 0: 0, 1: 0, 2: 0, 3: 0 },
       isTrumpBroken: false,
+      playedCards: [], // Reset history
       lastAction: { player: 'System', move: `Round ${nextRoundNum} Started` }
     });
   };
@@ -657,7 +660,8 @@ export default function Room() {
       isTrumpRevealed: false,
       bids: {}, // Initialize bids
       tricksWon: { 0: 0, 1: 0, 2: 0, 3: 0 }, // Initialize won count
-      isTrumpBroken: false
+      isTrumpBroken: false,
+      playedCards: [] // Reset history
     });
   };
 
