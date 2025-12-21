@@ -166,23 +166,21 @@ export default function Room() {
       }
     });
 
-    // Collect all trumps played this trick
-    const trumpsInTrick = roomData.currentTrick
-      .filter(item => item.card.suit === trufSuit && roomData.isTrumpRevealed)
-      .map(item => ({
-        player: roomData.seats[item.seatIndex].name,
-        card: item.card
-      }));
+    // Collect all cards index-mapped for the compass
+    const trickCards = {};
+    roomData.currentTrick.forEach(item => {
+      trickCards[item.seatIndex] = item;
+    });
 
     setTrumpAnnouncement({
       type: 'trick_result',
       winnerName: roomData.seats[winner.seatIndex].name,
-      winnerCard: winner.card,
-      trumps: trumpsInTrick,
+      winnerSeatIndex: winner.seatIndex,
+      trickCards: trickCards,
       isTrumpWin: winner.card.suit === trufSuit
     });
 
-    const timer = setTimeout(() => setTrumpAnnouncement(null), 4500); // Higher duration for more content
+    const timer = setTimeout(() => setTrumpAnnouncement(null), 4500);
     return () => clearTimeout(timer);
   }, [roomData?.currentTrick?.length, roomData?.trufSuit, roomData?.isTrumpRevealed]);
 
@@ -911,65 +909,78 @@ export default function Room() {
           );
         })}
 
-        {/* Unified Trick Result & Trump Details Overlay */}
+        {/* Unified Trick Result - Compass Formation Layout (Optimized Sizing) */}
         {trumpAnnouncement?.type === 'trick_result' && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none animate-fade-in px-4">
-            <div className="bg-black/95 backdrop-blur-2xl p-1 shadow-[0_0_100px_rgba(0,0,0,0.8)] rounded-[40px] border border-white/20 overflow-hidden transform animate-bounce-in max-w-[360px] w-full">
-              <div className={`px-6 py-8 rounded-[38px] flex flex-col gap-6 transition-all duration-500 ${trumpAnnouncement.isTrumpWin ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-white/5'}`}>
+          <div className="absolute inset-0 z-[120] flex items-center justify-center pointer-events-none animate-fade-in">
+            {/* Backdrop Dimmer */}
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
 
-                {/* Section 1: Winner */}
-                <div className="flex flex-col items-center text-center">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="w-10 h-[1px] bg-emerald-500/40"></span>
-                    <span className="text-[10px] font-black text-emerald-500 tracking-[0.4em] uppercase animate-pulse">Trick Winner</span>
-                    <span className="w-10 h-[1px] bg-emerald-500/40"></span>
-                  </div>
-                  <h3 className="text-3xl font-black italic text-white tracking-tighter uppercase leading-none mb-2 drop-shadow-glow">
-                    {trumpAnnouncement.winnerName}
-                  </h3>
-                  <div className="text-sm font-bold text-slate-300 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 shadow-inner">
-                    With {trumpAnnouncement.winnerCard.value === 14 || trumpAnnouncement.winnerCard.value === 1 ? 'A' :
-                      trumpAnnouncement.winnerCard.value === 13 ? 'K' :
-                        trumpAnnouncement.winnerCard.value === 12 ? 'Q' :
-                          trumpAnnouncement.winnerCard.value === 11 ? 'J' : trumpAnnouncement.winnerCard.value} {trumpAnnouncement.winnerCard.suit}
-                  </div>
+            <div className="relative w-full max-w-md aspect-square flex items-center justify-center scale-95 md:scale-100">
+              {/* Winner Announcement Header */}
+              <div className="absolute top-4 left-0 right-0 flex flex-col items-center animate-bounce-in z-50">
+                <div className="bg-emerald-500 text-black px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-xl mb-1.5">
+                  TRICK COMPLETE
                 </div>
+                <h2 className="text-3xl md:text-4xl font-black italic text-white tracking-tighter uppercase drop-shadow-glow text-center px-4">
+                  {trumpAnnouncement.winnerName} WINS!
+                </h2>
+              </div>
 
-                {/* Section 2: Trump Cards Used (If any) */}
-                {trumpAnnouncement.trumps?.length > 0 && (
-                  <div className="flex flex-col gap-3 pt-4 border-t border-white/10">
-                    <div className="flex items-center justify-between px-2 mb-1">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trump Breakdown</span>
-                      <span className="text-[10px] font-black text-emerald-500 uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">{trumpAnnouncement.trumps.length} TRUMPS</span>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {trumpAnnouncement.trumps.map((t, i) => (
-                        <div key={i} className="flex items-center justify-between bg-white/5 px-4 py-3 rounded-2xl border border-white/10 shadow-sm transition-all hover:bg-white/10">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xl bg-black/40 border border-white/10 shadow-inner`}>
-                              {t.card.suit}
+              {/* Central Table Visual */}
+              <div className="relative w-32 h-32 bg-white/5 rounded-full border border-white/10 flex items-center justify-center shadow-inner">
+                <div className="text-white/5 font-black text-4xl italic select-none">TRUF</div>
+
+                {/* Compass Cards */}
+                {[0, 1, 2, 3].map(seatIdx => {
+                  const pos = getRelativePosition(seatIdx);
+                  const playedData = trumpAnnouncement.trickCards[seatIdx];
+                  const isWinner = seatIdx === trumpAnnouncement.winnerSeatIndex;
+
+                  let posClass = "";
+                  switch (pos) {
+                    case "top": posClass = "-translate-y-28"; break;
+                    case "bottom": posClass = "translate-y-28"; break;
+                    case "left": posClass = "-translate-x-28"; break;
+                    case "right": posClass = "translate-x-28"; break;
+                  }
+
+                  return (
+                    <div key={seatIdx} className={`absolute transition-all duration-700 ${posClass} ${playedData ? 'opacity-100 scale-100' : 'opacity-10 scale-75'}`}>
+                      {playedData ? (
+                        <div className={`relative w-20 h-30 bg-white rounded-xl shadow-2xl border-2 flex flex-col justify-between p-2.5 transform ${isWinner ? 'border-yellow-400 scale-110 z-50 shadow-[0_0_40px_rgba(234,179,8,0.5)] animate-pulse' : 'border-slate-300'}`}>
+                          {isWinner && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-yellow-400 text-black text-[8px] font-black px-2 py-0.5 rounded-full shadow-lg z-50 border border-black whitespace-nowrap">
+                              WINNER
                             </div>
-                            <span className="text-sm font-black text-white truncate max-w-[120px] uppercase tracking-tight">{t.player}</span>
+                          )}
+
+                          <div className={`flex justify-between items-start font-black text-base leading-none ${['♥️', '♦️'].includes(playedData.card.suit) ? 'text-red-600' : 'text-slate-900'}`}>
+                            <span>{playedData.card.value === 14 || playedData.card.value === 1 ? 'A' : playedData.card.value === 13 ? 'K' : playedData.card.value === 12 ? 'Q' : playedData.card.value === 11 ? 'J' : playedData.card.value}</span>
+                            <span className="text-lg">{playedData.card.suit}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg font-black text-emerald-500 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)]">
-                              {t.card.value === 14 || t.card.value === 1 ? 'A' :
-                                t.card.value === 13 ? 'K' :
-                                  t.card.value === 12 ? 'Q' :
-                                    t.card.value === 11 ? 'J' : t.card.value}
-                            </span>
+
+                          <div className={`flex items-center justify-center text-4xl flex-1 drop-shadow-sm`}>
+                            {playedData.card.suit}
+                          </div>
+
+                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-tighter text-center border-t border-slate-100 pt-1 truncate w-full">
+                            {roomData.seats[seatIdx].name}
                           </div>
                         </div>
-                      ))}
+                      ) : (
+                        <div className="w-16 h-24 bg-black/40 border-2 border-dashed border-white/5 rounded-xl flex items-center justify-center">
+                          <span className="text-white/5 text-[8px] font-black uppercase">EMPTY</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })}
+              </div>
 
-                {/* Status Indicator */}
-                <div className="flex justify-center mt-1">
-                  <div className={`px-4 py-1.5 rounded-full text-[7px] font-black uppercase tracking-[0.2em] transform transition-all ${trumpAnnouncement.isTrumpWin ? 'bg-emerald-500 text-black shadow-lg animate-pulse' : 'bg-slate-800 text-slate-500'}`}>
-                    {trumpAnnouncement.isTrumpWin ? 'Power Play Active' : 'Normal Trick'}
-                  </div>
+              {/* Footer Status */}
+              <div className="absolute bottom-8 flex justify-center w-full">
+                <div className={`px-6 py-2 rounded-xl font-black uppercase tracking-[0.2em] text-[10px] shadow-xl border transition-all ${trumpAnnouncement.isTrumpWin ? 'bg-emerald-500 text-black border-white animate-bounce' : 'bg-white/5 text-white/20 border-white/5'}`}>
+                  {trumpAnnouncement.isTrumpWin ? 'TRUMP POWER USED' : 'NORMAL VICTORY'}
                 </div>
               </div>
             </div>
