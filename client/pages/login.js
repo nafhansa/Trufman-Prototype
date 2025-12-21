@@ -28,19 +28,19 @@ export default function Login() {
         </div>
 
         <h1 className="text-3xl sm:text-5xl md:text-7xl font-black mb-2 text-center sm:text-left text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-500 tracking-tighter uppercase italic drop-shadow-2xl">
-          SUPER CARD BATTLE
+          TRUFMAN CARD GAME
         </h1>
-        <p className="text-emerald-400 font-bold tracking-[0.25em] mb-8 sm:mb-12 uppercase opacity-80 text-xs sm:text-sm">The Ultimate Truf Experience</p>
+        <p className="text-emerald-400 font-bold tracking-[0.25em] mb-8 sm:mb-12 uppercase opacity-80 text-xs sm:text-sm">"Jumlah Kartu Hanya 52"</p>
 
         <button
           onClick={handleLogin}
           className="group relative px-6 py-3 sm:px-8 sm:py-4 bg-white text-black rounded-xl sm:rounded-2xl font-black flex items-center gap-3 sm:gap-4 hover:bg-yellow-400 transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.5)] hover:shadow-[0_10px_40px_rgba(234,179,8,0.4)] hover:-translate-y-1"
         >
           <img src="https://www.google.com/favicon.ico" className="w-5 h-5 sm:w-6 sm:h-6 grayscale group-hover:grayscale-0 transition-all" alt="Google" />
-          <span className="text-sm sm:text-lg uppercase">Mulai Bertarung</span>
+          <span className="text-sm sm:text-lg uppercase">Mulai Bermain</span>
         </button>
 
-        <p className="mt-6 sm:mt-8 text-white/30 text-[10px] sm:text-xs font-medium uppercase tracking-widest">Powered by Trufman Card Engine</p>
+        <p className="mt-6 sm:mt-8 text-white/30 text-[10px] sm:text-xs font-medium uppercase tracking-widest">Powered by Nafhan's Brain Engine</p>
       </div>
     </div>
   );

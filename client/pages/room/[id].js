@@ -80,7 +80,7 @@ const TrumpIndicator = ({ trufSuit, trufValue, isRevealed, status }) => {
     <div className="flex flex-col items-center justify-center group relative z-40">
       {/* Label di atas kartu */}
       <div className="mb-2 text-[10px] font-black tracking-[0.2em] text-emerald-500 uppercase animate-pulse">
-        {isRevealed ? "TRUMP SUIT" : "HIDDEN TRUMP"}
+        {isRevealed ? "TRUF SUIT" : "HIDDEN TRUF"}
       </div>
 
       {/* Wrapper Perspective */}
@@ -839,7 +839,7 @@ export default function Room() {
                       <span>MAIN {roomData.strategy}</span>
                     </div>
                     <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-400 text-xs font-black">
-                      TOTAL BIDS: <span className="text-white">{roomData.totalBids || 0}</span>
+                      TOTAL BET: <span className="text-white">{roomData.totalBids || 0}</span>
                     </div>
                   </div>
                 )}
@@ -1079,8 +1079,8 @@ export default function Room() {
             </div>
           ) : (
             <div className="bg-black/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/10 pointer-events-auto text-center">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Awaiting Warriors</p>
-              {isHost && roomData.seats.filter(s => s.type !== 'empty').length >= 2 ? (
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Awaiting Players</p>
+              {isHost && roomData.seats.filter(s => s.type !== 'empty').length >= 4 ? (
                 <button
                   onClick={initializeGame}
                   className="px-10 py-4 bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl font-black text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/20"
@@ -1088,7 +1088,7 @@ export default function Room() {
                   START GAME
                 </button>
               ) : (
-                <div className="text-sm text-slate-500 italic">Need at least 2 warriors...</div>
+                <div className="text-sm text-slate-500 italic">Need at least 4 players or bot...</div>
               )}
             </div>
           )}

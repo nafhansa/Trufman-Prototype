@@ -96,7 +96,7 @@ export default function Dashboard() {
             <h1 className="text-6xl md:text-8xl font-black text-white tracking-tighter uppercase italic select-none">
               TRUF<span className="text-emerald-500">MAN</span>
             </h1>
-            <p className="text-slate-400 font-bold tracking-[0.4em] uppercase text-sm mt-2">The Heroic Card Game</p>
+            <p className="text-slate-400 font-bold tracking-[0.4em] uppercase text-sm mt-2">The Hero's Card Game</p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -138,8 +138,8 @@ export default function Dashboard() {
               {/* Left Side: Create/Explore */}
               <div className="space-y-8">
                 <div>
-                  <h2 className="text-3xl font-bold text-white mb-4">Mulai Pertarungan</h2>
-                  <p className="text-slate-400 leading-relaxed">Panggil teman-temanmu atau hadapi Bot AI yang tangguh dalam arena kartu Truf yang legendaris.</p>
+                  <h2 className="text-3xl font-bold text-white mb-4">Mulai Bermain</h2>
+                  <p className="text-slate-400 leading-relaxed">Panggil teman-temanmu atau hadapi Self Learning AI Bot dalam arena kartu Trufman</p>
                 </div>
 
                 <div className="flex flex-col gap-4">
@@ -193,7 +193,7 @@ export default function Dashboard() {
 
         {/* Footer info */}
         <div className="mt-12 text-center">
-          <p className="text-slate-600 text-xs font-bold uppercase tracking-[0.5em]">Trufman Engine v1.0 • Global Servers Active</p>
+          <p className="text-slate-600 text-xs font-bold uppercase tracking-[0.5em]">Nafhan's Brain Engine • Worldwide Servers Active</p>
         </div>
       </div>
     </div>
