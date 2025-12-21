@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* Tambahan animasi custom */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+/* --- 3D FLIP ANIMATION FIX --- */
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+/* Container kartu yang berputar */
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 1.5s cubic-bezier(0.4, 0.2, 0.2, 1); /* Durasi sama dengan timeout JS */
+  transform: rotateY(0deg); /* POSISI AWAL (PENTING!) */
+}
+
+/* Class trigger putaran */
+.flip-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+/* Sifat dasar kedua sisi kartu */
+.flip-card-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden; /* Safari support */
+  backface-visibility: hidden;
+  top: 0;
+  left: 0;
+  border-radius: 0.5rem; /* rounded-lg */
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* shadow-xl */
+}
+
+/* Sisi Depan (Hasil Truf) - Kita putar 180 duluan */
+.flip-card-front {
+  transform: rotateY(180deg);
+  background-color: white;
+}
+
+/* Sisi Belakang (Cover) - Tidak diputar */
+.flip-card-back {
+  transform: rotateY(0deg);
+  background-color: #0f172a; /* slate-900 */
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Global text color: handled by standard CSS to avoid build issues */
+html,
+body {
+  background-color: #000;
+  color: #fff;
+  margin: 0;
+  padding: 0;
+}
