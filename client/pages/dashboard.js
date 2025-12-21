@@ -10,6 +10,7 @@ const socket = io("http://localhost:3001");
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
@@ -114,16 +115,28 @@ export default function Dashboard() {
                 <p className="text-emerald-500/80 text-[10px] uppercase font-black tracking-widest mt-1">Satriya Level 1</p>
               </div>
             </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowTutorial(true)}
+                className="px-4 py-2 rounded-full bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all transform active:scale-95 shadow-sm flex items-center gap-2"
+                title="Tutorial"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" />
+                </svg>
+                <span className="text-sm font-bold uppercase tracking-widest">Tutorial</span>
+              </button>
 
-            <button
-              onClick={handleLogout}
-              className="p-3 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all transform active:scale-95 shadow-lg group"
-              title="Logout"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
+              <button
+                onClick={handleLogout}
+                className="p-3 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all transform active:scale-95 shadow-lg group"
+                title="Logout"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -195,6 +208,70 @@ export default function Dashboard() {
         <div className="mt-12 text-center">
           <p className="text-slate-600 text-xs font-bold uppercase tracking-[0.5em]">Nafhan's Brain Engine • Worldwide Servers Active</p>
         </div>
+
+        {/* Tutorial Modal */}
+        {showTutorial && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
+            onClick={() => setShowTutorial(false)}
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+            <div
+              className="relative z-50 max-w-3xl w-full bg-gradient-to-br from-slate-900/95 to-slate-800/95 border border-white/10 rounded-2xl shadow-2xl p-8 md:p-12 text-white overflow-auto"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-3xl font-extrabold">Tutorial Bermain Trufman</h2>
+                  <p className="text-slate-400 mt-2">Panduan singkat cara bermain, objective, dan tips kemenangan.</p>
+                </div>
+                <button onClick={() => setShowTutorial(false)} className="p-2 rounded-md bg-white/5 hover:bg-white/10">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-bold text-emerald-400">Objective</h3>
+                  <p className="text-slate-300">Kumpulkan poin dengan memenangkan trik dan menebak jumlah trik yang akan Anda menangkan setiap ronde. Gunakan strategi, komunikasi, dan perhatikan truf.</p>
+
+                  <h3 className="text-lg font-bold text-emerald-400 mt-4">Langkah Dasar</h3>
+                  <ol className="list-decimal list-inside text-slate-300 space-y-2">
+                    <li>Setiap pemain mendapat kartu. Lihat kartu Anda dan nilai potensinya.</li>
+                    <li>Tentukan jumlah trik (bet) yang akan Anda menangkan untuk ronde ini.</li>
+                    <li>Mainkan kartu secara bergantian mengikuti aturan suit/truf.</li>
+                    <li>Pemenang trick mendapat poin sesuai aturan, round berlanjut hingga selesai.</li>
+                  </ol>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-lg font-bold text-emerald-400">Aturan Penting</h3>
+                  <ul className="list-disc list-inside text-slate-300 space-y-2">
+                    <li>Ikuti suit jika memungkinkan. Jika tidak, Anda boleh membuang atau menggunakan truf.</li>
+                    <li>Truf mengalahkan suit biasa kecuali ada truf yang lebih tinggi.</li>
+                    <li>Pastikan memasang bet sebelum ronde dimulai.</li>
+                  </ul>
+
+                  <h3 className="text-lg font-bold text-emerald-400 mt-4">Tips & Strategi</h3>
+                  <ul className="list-disc list-inside text-slate-300 space-y-2">
+                    <li>Catat kartu yang sudah dimainkan untuk memprediksi sisa kartu.</li>
+                    <li>Gunakan truf pada momen yang tepat untuk mencuri trick penting.</li>
+                    <li>Jika bermain melawan bot, perhatikan pola AI untuk memanfaatkan kelemahan.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-8 flex items-center justify-end gap-3">
+                <button onClick={() => setShowTutorial(false)} className="px-5 py-3 rounded-xl bg-white text-black font-bold hover:bg-white/90">Siap, Mengerti</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
