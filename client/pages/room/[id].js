@@ -916,12 +916,12 @@ export default function Room() {
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
 
             <div className="relative w-full max-w-md aspect-square flex items-center justify-center scale-95 md:scale-100">
-              {/* Winner Announcement Header */}
-              <div className="absolute top-4 left-0 right-0 flex flex-col items-center animate-bounce-in z-50">
-                <div className="bg-emerald-500 text-black px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] shadow-xl mb-1.5">
+              {/* Winner Announcement Header - Moved higher to avoid overlap */}
+              <div className="absolute -top-16 left-0 right-0 flex flex-col items-center animate-bounce-in z-50">
+                <div className="bg-emerald-500 text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.4em] shadow-2xl mb-2">
                   TRICK COMPLETE
                 </div>
-                <h2 className="text-3xl md:text-4xl font-black italic text-white tracking-tighter uppercase drop-shadow-glow text-center px-4">
+                <h2 className="text-4xl md:text-5xl font-black italic text-white tracking-tighter uppercase drop-shadow-[0_0_30px_rgba(0,0,0,0.5)] text-center px-4">
                   {trumpAnnouncement.winnerName} WINS!
                 </h2>
               </div>
