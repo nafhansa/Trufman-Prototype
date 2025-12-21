@@ -13,6 +13,16 @@ import {
   getDocs
 } from "firebase/firestore";
 
+// Helper: safe update wrapper to centralize error handling for Firestore updates
+const safeUpdate = async (ref, data) => {
+  try {
+    await updateDoc(ref, data);
+  } catch (err) {
+    console.error('Failed to update room:', err);
+    try { alert('Action failed. Please try again.'); } catch (e) { /* ignore in non-browser env */ }
+  }
+};
+
 const LiveScorePanel = ({ roomData, mySeatIndex }) => {
   if (!roomData || (roomData.status !== 'playing' && roomData.status !== 'round_over')) return null;
 
@@ -265,7 +275,7 @@ export default function Room() {
               newBets[seatIdx] = bestBidCard;
             }
           });
-          await updateDoc(doc(db, "rooms", docId), { bets: newBets });
+          await safeUpdate(doc(db, "rooms", docId), { bets: newBets });
         }, 1500);
         return () => clearTimeout(timer);
       }
@@ -306,7 +316,7 @@ export default function Room() {
           console.log("STEP 1: Setting up playing phase (Card Hidden)"); // Debugging
 
           // --- STEP 1: Setup Playing tapi KARTU MASIH TUTUP (False) ---
-          await updateDoc(doc(db, "rooms", docId), {
+          await safeUpdate(doc(db, "rooms", docId), {
             status: 'playing',
             trufSuit: winningSuit,
             trufCardValue: winningCard?.value || 0,
@@ -323,7 +333,7 @@ export default function Room() {
           // --- STEP 2: Reveal Animation (Jeda 1.5 Detik biar lebih kerasa) ---
           setTimeout(async () => {
             console.log("STEP 2: Revealing Card!"); // Debugging
-            await updateDoc(doc(db, "rooms", docId), {
+            await safeUpdate(doc(db, "rooms", docId), {
               isTrumpRevealed: true
             });
           }, 2000); // Saya naikkan jadi 1500ms biar browser sempat napas
@@ -387,7 +397,7 @@ export default function Room() {
             updateFields.turnIndex = nextTurn;
           }
 
-          await updateDoc(doc(db, "rooms", docId), updateFields);
+          await safeUpdate(doc(db, "rooms", docId), updateFields);
 
           // If trick complete, trigger clear logic
           if (newTrick.length === 4) {
@@ -503,7 +513,7 @@ export default function Room() {
         updateFields.turnIndex = winnerSeatIdx;
       }
 
-      await updateDoc(doc(db, "rooms", docId), updateFields);
+      await safeUpdate(doc(db, "rooms", docId), updateFields);
     }, 3000);
   };
 
@@ -544,7 +554,7 @@ export default function Room() {
 
     const nextRoundNum = (roomData.roundNumber || 1) + 1;
 
-    await updateDoc(doc(db, "rooms", docId), {
+    await safeUpdate(doc(db, "rooms", docId), {
       status: 'betting',
       seats: newSeats,
       roundNumber: nextRoundNum,
@@ -584,7 +594,7 @@ export default function Room() {
       score: 0,
       hand: []
     };
-    await updateDoc(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
   };
 
   const handleAddBot = async (index) => {
@@ -597,14 +607,14 @@ export default function Room() {
       score: 0,
       hand: []
     };
-    await updateDoc(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
   };
 
   const handleKick = async (index) => {
     if (!docId || !isHost) return;
     const newSeats = [...roomData.seats];
     newSeats[index] = { type: 'empty', player: null };
-    await updateDoc(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
   };
 
   const initializeGame = async () => {
@@ -645,7 +655,7 @@ export default function Room() {
     let firstTurn = 0;
     while (newSeats[firstTurn].type === 'empty') firstTurn++;
 
-    await updateDoc(doc(db, "rooms", docId), {
+    await safeUpdate(doc(db, "rooms", docId), {
       status: 'betting', // Transition to simultaneous betting phase first
       seats: newSeats,
       turnIndex: firstTurn,
@@ -671,7 +681,7 @@ export default function Room() {
     const newBets = { ...(roomData.bets || {}) };
     newBets[mySeatIndex] = selectedCard;
 
-    await updateDoc(doc(db, "rooms", docId), {
+    await safeUpdate(doc(db, "rooms", docId), {
       bets: newBets
     });
     setHasSubmittedBet(true);
@@ -752,7 +762,7 @@ export default function Room() {
       updateFields.turnIndex = nextTurn;
     }
 
-    await updateDoc(doc(db, "rooms", docId), updateFields);
+    await safeUpdate(doc(db, "rooms", docId), updateFields);
 
     if (newTrick.length === 4) {
       handleEndTrick(newTrick);

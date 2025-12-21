@@ -4,12 +4,23 @@ const { Server } = require("socket.io");
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+app.use(express.json());
+
+// CORS: read allowed origins from env ALLOWED_ORIGINS (comma separated). If empty, fall back to allowing localhost origins for convenience.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0) return callback(null, true); // development convenience
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  }
+}));
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Mengizinkan koneksi dari mana saja (HP/Laptop beda IP)
+    origin: allowedOrigins.length ? allowedOrigins : "*",
     methods: ["GET", "POST"]
   }
 });
@@ -85,6 +96,8 @@ io.on('connection', (socket) => {
     checkTurn(roomId); // Cek giliran pertama
   });
 
+  // (Intent endpoints are registered at top-level outside of this connection handler.)
+
   // FUNGSI PINTAR: Cek Giliran
   function checkTurn(roomId) {
     const room = rooms[roomId];
@@ -138,6 +151,29 @@ io.on('connection', (socket) => {
     checkTurn(roomId); // Rekursif cek orang berikutnya
   }
 });
+
+  // Intent endpoints: allow clients to submit intents to the server which will validate and broadcast via socket
+  // (Clients should POST to these endpoints instead of performing direct DB writes for critical actions.)
+  app.post('/intent/playCard', (req, res) => {
+    const { roomId, seatIndex, card, userId } = req.body || {};
+    if (!roomId || card === undefined) return res.status(400).json({ error: 'missing roomId or card' });
+    io.to(roomId).emit('intent:playCard', { seatIndex, card, userId });
+    return res.json({ ok: true });
+  });
+
+  app.post('/intent/submitBet', (req, res) => {
+    const { roomId, seatIndex, bet, userId } = req.body || {};
+    if (!roomId || bet === undefined) return res.status(400).json({ error: 'missing roomId or bet' });
+    io.to(roomId).emit('intent:submitBet', { seatIndex, bet, userId });
+    return res.json({ ok: true });
+  });
+
+  app.post('/intent/endTrick', (req, res) => {
+    const { roomId, trick, userId } = req.body || {};
+    if (!roomId || !trick) return res.status(400).json({ error: 'missing roomId or trick' });
+    io.to(roomId).emit('intent:endTrick', { trick, userId });
+    return res.json({ ok: true });
+  });
 
 server.listen(3001, () => {
   console.log('✅ SERVER RUNNING ON PORT 3001');
