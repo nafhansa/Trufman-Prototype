@@ -15,9 +15,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem("user"));
-    if (!u) router.push("/login");
-    setUser(u);
+    if (u) setUser(u);
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("loginAt");
+    auth.signOut();
+    router.push("/login");
+  };
 
   const createRoom = async () => {
     if (isCreating) return;
@@ -92,19 +98,31 @@ export default function Dashboard() {
             <p className="text-slate-400 font-bold tracking-[0.4em] uppercase text-sm mt-2">The Heroic Card Game</p>
           </div>
 
-          <div className="flex items-center gap-4 p-2 pr-6 bg-white/5 border border-white/10 rounded-full backdrop-blur-md">
-            <div className="relative">
-              <img
-                src={user?.photoURL}
-                alt="avatar"
-                className="w-12 h-12 rounded-full border-2 border-emerald-500 object-cover"
-              />
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-950 rounded-full"></div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 p-2 pr-6 bg-white/5 border border-white/10 rounded-full backdrop-blur-md">
+              <div className="relative">
+                <img
+                  src={user?.photoURL}
+                  alt="avatar"
+                  className="w-12 h-12 rounded-full border-2 border-emerald-500 object-cover"
+                />
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-950 rounded-full"></div>
+              </div>
+              <div>
+                <p className="text-white font-bold text-sm leading-none">{user?.displayName}</p>
+                <p className="text-emerald-500/80 text-[10px] uppercase font-black tracking-widest mt-1">Satriya Level 1</p>
+              </div>
             </div>
-            <div>
-              <p className="text-white font-bold text-sm leading-none">{user?.displayName}</p>
-              <p className="text-emerald-500/80 text-[10px] uppercase font-black tracking-widest mt-1">Satriya Level 1</p>
-            </div>
+
+            <button
+              onClick={handleLogout}
+              className="p-3 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all transform active:scale-95 shadow-lg group"
+              title="Logout"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
           </div>
         </div>
 
