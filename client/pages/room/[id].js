@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
-import { db, auth } from "../../firebase";
+import { getFirestoreInstance, getAuthInstance } from "../../firebase";
 import { calculateBotBid, getBestMove } from '../../utils/botAI';
 import {
   doc,
@@ -140,7 +140,9 @@ export default function Room() {
     if (!roomId) return;
 
     setDocId(roomId); // roomId is now the document ID
-    const unsubscribe = onSnapshot(doc(db, "rooms", roomId), (doc) => {
+    const fdb = getFirestoreInstance();
+    if (!fdb) return;
+    const unsubscribe = onSnapshot(doc(fdb, "rooms", roomId), (doc) => {
       if (doc.exists()) {
         setRoomData(doc.data());
       } else {
@@ -238,8 +240,8 @@ export default function Room() {
   };
 
   // --- Host & Seat Logic ---
-  const isHost = auth.currentUser?.uid === roomData?.host;
-  const mySeatIndex = roomData?.seats?.findIndex(seat => seat.type === 'human' && seat.uid === auth.currentUser?.uid);
+  const isHost = getAuthInstance()?.currentUser?.uid === roomData?.host;
+  const mySeatIndex = roomData?.seats?.findIndex(seat => seat.type === 'human' && seat.uid === getAuthInstance()?.currentUser?.uid);
   const isUserSeated = mySeatIndex !== -1;
 
   // --- Bot AI & Phase Management Logic (Host Only) ---
@@ -275,7 +277,7 @@ export default function Room() {
               newBets[seatIdx] = bestBidCard;
             }
           });
-          await safeUpdate(doc(db, "rooms", docId), { bets: newBets });
+          await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), { bets: newBets });
         }, 1500);
         return () => clearTimeout(timer);
       }
@@ -316,7 +318,7 @@ export default function Room() {
           console.log("STEP 1: Setting up playing phase (Card Hidden)"); // Debugging
 
           // --- STEP 1: Setup Playing tapi KARTU MASIH TUTUP (False) ---
-          await safeUpdate(doc(db, "rooms", docId), {
+          await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), {
             status: 'playing',
             trufSuit: winningSuit,
             trufCardValue: winningCard?.value || 0,
@@ -333,7 +335,7 @@ export default function Room() {
           // --- STEP 2: Reveal Animation (Jeda 1.5 Detik biar lebih kerasa) ---
           setTimeout(async () => {
             console.log("STEP 2: Revealing Card!"); // Debugging
-            await safeUpdate(doc(db, "rooms", docId), {
+            await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), {
               isTrumpRevealed: true
             });
           }, 2000); // Saya naikkan jadi 1500ms biar browser sempat napas
@@ -397,7 +399,7 @@ export default function Room() {
             updateFields.turnIndex = nextTurn;
           }
 
-          await safeUpdate(doc(db, "rooms", docId), updateFields);
+          await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
 
           // If trick complete, trigger clear logic
           if (newTrick.length === 4) {
@@ -513,7 +515,7 @@ export default function Room() {
         updateFields.turnIndex = winnerSeatIdx;
       }
 
-      await safeUpdate(doc(db, "rooms", docId), updateFields);
+      await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
     }, 3000);
   };
 
@@ -554,7 +556,7 @@ export default function Room() {
 
     const nextRoundNum = (roomData.roundNumber || 1) + 1;
 
-    await safeUpdate(doc(db, "rooms", docId), {
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), {
       status: 'betting',
       seats: newSeats,
       roundNumber: nextRoundNum,
@@ -584,17 +586,17 @@ export default function Room() {
 
   // --- Actions ---
   const handleTakeSeat = async (index) => {
-    if (!docId || !auth.currentUser || isUserSeated) return;
+    if (!docId || !getAuthInstance()?.currentUser || isUserSeated) return;
     const newSeats = [...roomData.seats];
     newSeats[index] = {
       type: 'human',
-      uid: auth.currentUser.uid,
-      name: auth.currentUser.displayName,
-      avatar: auth.currentUser.photoURL,
+      uid: getAuthInstance().currentUser.uid,
+      name: getAuthInstance().currentUser.displayName,
+      avatar: getAuthInstance().currentUser.photoURL,
       score: 0,
       hand: []
     };
-    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), { seats: newSeats });
   };
 
   const handleAddBot = async (index) => {
@@ -607,14 +609,14 @@ export default function Room() {
       score: 0,
       hand: []
     };
-    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), { seats: newSeats });
   };
 
   const handleKick = async (index) => {
     if (!docId || !isHost) return;
     const newSeats = [...roomData.seats];
     newSeats[index] = { type: 'empty', player: null };
-    await safeUpdate(doc(db, "rooms", docId), { seats: newSeats });
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), { seats: newSeats });
   };
 
   const initializeGame = async () => {
@@ -655,7 +657,7 @@ export default function Room() {
     let firstTurn = 0;
     while (newSeats[firstTurn].type === 'empty') firstTurn++;
 
-    await safeUpdate(doc(db, "rooms", docId), {
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), {
       status: 'betting', // Transition to simultaneous betting phase first
       seats: newSeats,
       turnIndex: firstTurn,
@@ -681,7 +683,7 @@ export default function Room() {
     const newBets = { ...(roomData.bets || {}) };
     newBets[mySeatIndex] = selectedCard;
 
-    await safeUpdate(doc(db, "rooms", docId), {
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), {
       bets: newBets
     });
     setHasSubmittedBet(true);
@@ -735,7 +737,7 @@ export default function Room() {
     );
 
     const newTrick = [...(roomData.currentTrick || []), {
-      playerId: auth.currentUser.uid,
+      playerId: getAuthInstance().currentUser.uid,
       seatIndex: mySeatIndex,
       card: selectedCard,
       isFaceDown: isFaceDown
@@ -762,7 +764,7 @@ export default function Room() {
       updateFields.turnIndex = nextTurn;
     }
 
-    await safeUpdate(doc(db, "rooms", docId), updateFields);
+    await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
 
     if (newTrick.length === 4) {
       handleEndTrick(newTrick);
@@ -873,7 +875,7 @@ export default function Room() {
             <div key={index} className={`absolute ${getPositionClasses(pos)} transition-all duration-500 z-40`}>
               <div className={`relative flex flex-col items-center p-4 rounded-3xl transition-all ${isTurn ? 'scale-110 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'scale-100 opacity-60'}`}>
                 {/* Kick Button (Host Only) */}
-                {isHost && seat.type !== 'empty' && seat.uid !== auth.currentUser?.uid && (
+                {isHost && seat.type !== 'empty' && seat.uid !== getAuthInstance()?.currentUser?.uid && (
                   <button
                     onClick={() => handleKick(index)}
                     className="absolute top-2 right-2 w-6 h-6 bg-red-600/80 hover:bg-red-600 text-white rounded-full font-black text-[10px] z-50 transition-all"

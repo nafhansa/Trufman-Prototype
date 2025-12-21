@@ -16,16 +16,43 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ''
 };
 
-if (!firebaseConfig.apiKey) {
-  console.warn('Firebase API key is not set. Please add NEXT_PUBLIC_FIREBASE_API_KEY to your env.');
+let app = null;
+let auth = null;
+let db = null;
+let provider = null;
+
+function initFirebase() {
+  if (app) return;
+  // Only initialize on the client and when API key is present
+  if (typeof window === 'undefined') return;
+  if (!firebaseConfig.apiKey) {
+    console.warn('Firebase API key is not set. Please add NEXT_PUBLIC_FIREBASE_API_KEY to your env.');
+    return;
+  }
+
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  provider = new GoogleAuthProvider();
 }
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
+export function getAuthInstance() {
+  initFirebase();
+  return auth;
+}
+
+export function getFirestoreInstance() {
+  initFirebase();
+  return db;
+}
 
 export const loginWithGoogle = async () => {
+  initFirebase();
+  if (!auth || !provider) {
+    console.warn('Firebase is not initialized or API key missing; login skipped.');
+    return null;
+  }
+
   try {
     const result = await signInWithPopup(auth, provider);
     return result.user;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import io from "socket.io-client";
-import { db, auth } from "../firebase";
+import { getFirestoreInstance, getAuthInstance } from "../firebase";
 import { collection, addDoc, setDoc, doc, serverTimestamp } from "firebase/firestore";
 
 // Ganti localhost dengan IP laptopmu jika ingin akses dari jaringan lokal
@@ -21,7 +21,8 @@ export default function Dashboard() {
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("loginAt");
-    auth.signOut();
+    const a = getAuthInstance();
+    a?.signOut();
     router.push("/login");
   };
 
@@ -31,7 +32,7 @@ export default function Dashboard() {
 
     try {
       const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const hostUid = auth.currentUser?.uid || user?.uid || user?.id;
+      const hostUid = getAuthInstance()?.currentUser?.uid || user?.uid || user?.id;
 
       if (!hostUid) {
         alert("Sesi anda berakhir. Silakan login kembali.");
@@ -41,7 +42,7 @@ export default function Dashboard() {
 
       // Gunakan doc + setDoc agar roomId jadi Document ID
       // Ini jauh lebih reliabel daripada addDoc
-      await setDoc(doc(db, "rooms", roomId), {
+      await setDoc(doc(getFirestoreInstance(), "rooms", roomId), {
         roomId: roomId,
         host: hostUid,
         status: "waiting",

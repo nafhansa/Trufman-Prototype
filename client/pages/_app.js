@@ -2,7 +2,7 @@ import Head from "next/head";
 import "../styles/globals.css";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { auth } from "../firebase";
+import { getAuthInstance } from "../firebase";
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
@@ -26,7 +26,8 @@ export default function App({ Component, pageProps }) {
       if (now - parseInt(loginAt) > sixHours) {
         localStorage.removeItem("user");
         localStorage.removeItem("loginAt");
-        auth.signOut();
+        const a = getAuthInstance();
+        a?.signOut();
         router.push("/login");
       }
     }
