@@ -27,7 +27,7 @@ const LiveScorePanel = ({ roomData, mySeatIndex }) => {
   if (!roomData || (roomData.status !== 'playing' && roomData.status !== 'round_over')) return null;
 
   return (
-    <div className="fixed top-24 right-6 z-50 w-64 bg-black/60 backdrop-blur-xl border border-white/10 rounded-[32px] overflow-hidden shadow-2xl animate-fade-in">
+    <div className="fixed top-20 right-2 md:top-24 md:right-6 z-50 w-48 md:w-64 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl md:rounded-[32px] overflow-hidden shadow-2xl animate-fade-in">
       <div className="bg-white/5 px-6 py-4 border-b border-white/5 flex items-center justify-between">
         <h3 className="text-[10px] font-black tracking-[0.2em] text-emerald-500 uppercase">Live Arena Score</h3>
         <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]"></div>
@@ -828,10 +828,10 @@ export default function Room() {
 
   const getPositionClasses = (pos) => {
     switch (pos) {
-      case "bottom": return "bottom-0 left-1/2 -translate-x-1/2 translate-y-full pt-12";
-      case "left": return "left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-12";
-      case "top": return "top-0 left-1/2 -translate-x-1/2 -translate-y-full pb-12";
-      case "right": return "right-0 top-1/2 -translate-y-1/2 translate-x-full pl-12";
+      case "bottom": return "bottom-0 left-1/2 -translate-x-1/2 translate-y-full pt-4 md:pt-8 lg:pt-12";
+      case "left": return "left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-4 md:pr-8 lg:pr-12";
+      case "top": return "top-0 left-1/2 -translate-x-1/2 -translate-y-full pb-4 md:pb-8 lg:pb-12";
+      case "right": return "right-0 top-1/2 -translate-y-1/2 translate-x-full pl-4 md:pl-8 lg:pl-12";
     }
   };
 
@@ -839,7 +839,7 @@ export default function Room() {
   if (!roomData) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-500 font-black">LOADING ARENA...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-20 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4 md:p-8 lg:p-20 relative overflow-hidden font-sans">
       <Head><title>Trufman Battle - {roomId}</title></Head>
 
       {/* Background Mesh */}
@@ -849,33 +849,35 @@ export default function Room() {
       </div>
 
       {/* Header Bar */}
-      <div className="absolute top-6 left-6 right-6 flex justify-between items-center z-50">
-        <div className="flex items-center gap-4">
-          <div className="px-4 py-2 bg-black/40 border border-white/10 rounded-xl backdrop-blur-md">
-            <span className="text-emerald-500 font-black italic">#{roomId}</span>
+      <div className="absolute top-2 left-2 right-2 md:top-6 md:left-6 md:right-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 md:gap-0 z-50">
+        <div className="flex items-center gap-2 md:gap-4 flex-wrap">
+          <div className="px-2 md:px-4 py-1 md:py-2 bg-black/40 border border-white/10 rounded-lg md:rounded-xl backdrop-blur-md">
+            <span className="text-emerald-500 font-black italic text-xs md:text-sm">#{roomId}</span>
           </div>
 
           {(roomData.status === 'playing' || roomData.status === 'betting') && (
-            <div className="pl-6 border-l border-white/10 flex items-center gap-8">
-              <TrumpIndicator
-                trufSuit={roomData.trufSuit}
-                trufValue={roomData.trufCardValue}
-                isRevealed={roomData.isTrumpRevealed}
-                status={roomData.status}
-              />
+            <div className="pl-2 md:pl-6 border-l border-white/10 flex items-center gap-2 md:gap-8 flex-wrap">
+              <div className="hidden md:block">
+                <TrumpIndicator
+                  trufSuit={roomData.trufSuit}
+                  trufValue={roomData.trufCardValue}
+                  isRevealed={roomData.isTrumpRevealed}
+                  status={roomData.status}
+                />
+              </div>
 
-              <div className="flex items-center gap-3">
-                <div className={`px-4 py-2 ${roomData.status === 'betting' ? 'bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.2)]' : 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.2)]'} text-black font-black rounded-xl animate-pulse`}>
-                  {roomData.status === 'betting' ? 'BETTING PHASE' : 'LIVE BATTLE'}
+              <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+                <div className={`px-2 md:px-4 py-1 md:py-2 ${roomData.status === 'betting' ? 'bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.2)]' : 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.2)]'} text-black font-black rounded-lg md:rounded-xl animate-pulse text-[10px] md:text-sm`}>
+                  {roomData.status === 'betting' ? 'BETTING' : 'LIVE'}
                 </div>
                 {roomData.strategy && (
-                  <div className="flex items-center gap-2">
-                    <div className="px-4 py-2 bg-blue-600 text-white font-black rounded-xl border border-white/20 flex items-center gap-2 shadow-[0_0_20px_rgba(37,99,235,0.2)]">
+                  <div className="flex items-center gap-1 md:gap-2 flex-wrap">
+                    <div className="px-2 md:px-4 py-1 md:py-2 bg-blue-600 text-white font-black rounded-lg md:rounded-xl border border-white/20 flex items-center gap-1 md:gap-2 shadow-[0_0_20px_rgba(37,99,235,0.2)] text-[10px] md:text-sm">
                       {roomData.strategy === 'ATAS' ? '⬆️' : '⬇️'}
-                      <span>MAIN {roomData.strategy}</span>
+                      <span className="hidden sm:inline">{roomData.strategy}</span>
                     </div>
-                    <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-400 text-xs font-black">
-                      TOTAL BET: <span className="text-white">{roomData.totalBids || 0}</span>
+                    <div className="px-2 md:px-4 py-1 md:py-2 bg-white/5 border border-white/10 rounded-lg md:rounded-xl text-slate-400 text-[9px] md:text-xs font-black">
+                      BET: <span className="text-white">{roomData.totalBids || 0}</span>
                     </div>
                   </div>
                 )}
@@ -884,22 +886,22 @@ export default function Room() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <button onClick={copyToClipboard} className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all">
+        <div className="flex items-center gap-2 md:gap-3">
+          <button onClick={copyToClipboard} className="px-2 md:px-4 py-1 md:py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg md:rounded-xl text-[10px] md:text-xs font-bold transition-all">
             {copySuccess ? "COPIED!" : "INVITE"}
           </button>
-          <button onClick={() => router.push('/dashboard')} className="px-4 py-2 bg-red-950/20 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
+          <button onClick={() => router.push('/dashboard')} className="px-2 md:px-4 py-1 md:py-2 bg-red-950/20 text-red-500 border border-red-500/20 rounded-lg md:rounded-xl text-[10px] md:text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
             QUIT
           </button>
         </div>
       </div>
       <LiveScorePanel roomData={roomData} mySeatIndex={mySeatIndex} />
 
-      <div className="relative w-full max-w-6xl aspect-[21/9] bg-emerald-950/20 rounded-[100px] border-[20px] border-slate-900 shadow-2xl flex items-center justify-center">
+      <div className="relative w-full max-w-6xl aspect-[21/9] md:aspect-[21/9] bg-emerald-950/20 rounded-[50px] md:rounded-[100px] border-[8px] md:border-[20px] border-slate-900 shadow-2xl flex items-center justify-center">
         {/* Table Logo */}
         <div className="absolute inset-0 flex flex-col items-center justify-center opacity-5 pointer-events-none select-none">
-          <h2 className="text-[12rem] font-black tracking-tighter italic">TRUFMAN</h2>
-          <p className="text-xl font-bold tracking-[2em]">ARENA SYSTEM</p>
+          <h2 className="text-[4rem] md:text-[8rem] lg:text-[12rem] font-black tracking-tighter italic">TRUFMAN</h2>
+          <p className="text-xs md:text-base lg:text-xl font-bold tracking-[1em] md:tracking-[2em]">ARENA SYSTEM</p>
         </div>
 
         {/* Dynamic Seats */}
@@ -921,23 +923,25 @@ export default function Room() {
                 )}
 
                 {seat.type === 'empty' ? (
-                  <div className="w-24 h-24 rounded-full border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-2 group hover:border-emerald-500/50 transition-colors">
+                  <div className="w-16 h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 rounded-full border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-1 md:gap-2 group hover:border-emerald-500/50 transition-colors">
                     {!isUserSeated && (
-                      <button onClick={() => handleTakeSeat(index)} className="text-[10px] font-black uppercase text-emerald-400 hover:text-white transition-colors">JOIN SEAT</button>
+                      <button onClick={() => handleTakeSeat(index)} className="text-[8px] md:text-[10px] font-black uppercase text-emerald-400 hover:text-white transition-colors">JOIN</button>
                     )}
-                    <button onClick={() => handleAddBot(index)} className="text-[10px] font-black uppercase text-slate-500 hover:text-white transition-colors">+ ADD BOT</button>
+                    {isHost && (
+                      <button onClick={() => handleAddBot(index)} className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 hover:text-white transition-colors">+ BOT</button>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center group">
-                    <div className={`p-1.5 rounded-full border-4 transition-all duration-300 ${isTurn ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] scale-110' : 'border-white/5'}`}>
-                      <img src={seat.avatar} className="w-20 h-20 rounded-full object-cover shadow-2xl" />
+                    <div className={`p-1 md:p-1.5 rounded-full border-2 md:border-4 transition-all duration-300 ${isTurn ? 'border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] scale-110' : 'border-white/5'}`}>
+                      <img src={seat.avatar} className="w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-full object-cover shadow-2xl" />
                     </div>
-                    <div className="mt-3 text-[11px] font-black uppercase tracking-widest bg-black/60 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 flex flex-col items-center gap-1.5 shadow-xl">
-                      <span className="text-white drop-shadow-md">{seat.name} {seat.type === 'bot' ? '🤖' : ''}</span>
+                    <div className="mt-1 md:mt-2 lg:mt-3 text-[9px] md:text-[10px] lg:text-[11px] font-black uppercase tracking-wider md:tracking-widest bg-black/60 backdrop-blur-md px-2 md:px-3 lg:px-4 py-1 md:py-1.5 lg:py-2 rounded-xl md:rounded-2xl border border-white/10 flex flex-col items-center gap-1 md:gap-1.5 shadow-xl">
+                      <span className="text-white drop-shadow-md text-center truncate max-w-[60px] md:max-w-[80px] lg:max-w-none">{seat.name.split(' ')[0]} {seat.type === 'bot' ? '🤖' : ''}</span>
 
                       {roomData.status === 'betting' && roomData.bets?.[index] && (
-                        <div className="text-[9px] text-yellow-400 font-black animate-pulse flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span>
+                        <div className="text-[8px] md:text-[9px] text-yellow-400 font-black animate-pulse flex items-center gap-1">
+                          <span className="w-1 h-1 md:w-1.5 md:h-1.5 bg-yellow-400 rounded-full"></span>
                           READY
                         </div>
                       )}
@@ -979,11 +983,11 @@ export default function Room() {
               </div>
 
               {/* Central Table Visual */}
-              <div className="relative w-32 h-32 bg-white/5 rounded-full border border-white/10 flex items-center justify-center shadow-inner">
-                <div className="text-white/5 font-black text-4xl italic select-none">TRUF</div>
+              <div className="relative w-24 h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 bg-white/5 rounded-full border border-white/10 flex items-center justify-center shadow-inner">
+                <div className="text-white/5 font-black text-2xl md:text-3xl lg:text-4xl italic select-none">TRUF</div>
                 {/* Winner Indicator - Center Only */}
                 {trumpAnnouncement?.winnerSeatIndex !== undefined && (
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-yellow-400 text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg z-[150] border-2 border-black whitespace-nowrap animate-pulse">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-yellow-400 text-black text-[8px] md:text-[9px] lg:text-[10px] font-black px-2 md:px-2.5 lg:px-3 py-1 md:py-1.5 rounded-full shadow-lg z-[150] border-2 border-black whitespace-nowrap animate-pulse">
                     WINNER
                   </div>
                 )}
@@ -995,34 +999,35 @@ export default function Room() {
                   const isWinner = seatIdx === trumpAnnouncement.winnerSeatIndex;
 
                   let posClass = "";
+                  // Responsive positioning for mobile
                   switch (pos) {
-                    case "top": posClass = "-translate-y-28"; break;
-                    case "bottom": posClass = "translate-y-28"; break;
-                    case "left": posClass = "-translate-x-28"; break;
-                    case "right": posClass = "translate-x-28"; break;
+                    case "top": posClass = "-translate-y-14 md:-translate-y-20 lg:-translate-y-28"; break;
+                    case "bottom": posClass = "translate-y-14 md:translate-y-20 lg:translate-y-28"; break;
+                    case "left": posClass = "-translate-x-14 md:-translate-x-20 lg:-translate-x-28"; break;
+                    case "right": posClass = "translate-x-14 md:translate-x-20 lg:translate-x-28"; break;
                   }
 
                   return (
                     <div key={seatIdx} className={`absolute transition-all duration-700 ${posClass} ${playedData ? 'opacity-100 scale-100' : 'opacity-10 scale-75'}`}>
                       {playedData ? (
-                        <div className={`relative w-20 h-30 bg-white rounded-xl shadow-2xl border-2 flex flex-col justify-between p-2.5 transform ${isWinner ? 'border-yellow-400 scale-110 z-50 shadow-[0_0_40px_rgba(234,179,8,0.5)] animate-pulse' : 'border-slate-300'}`}>
+                        <div className={`relative w-12 h-18 md:w-16 md:h-24 lg:w-20 lg:h-30 bg-white rounded-lg md:rounded-xl shadow-2xl border-2 flex flex-col justify-between p-1.5 md:p-2 lg:p-2.5 transform ${isWinner ? 'border-yellow-400 scale-110 z-50 shadow-[0_0_40px_rgba(234,179,8,0.5)] animate-pulse' : 'border-slate-300'}`}>
 
-                          <div className={`flex justify-between items-start font-black text-base leading-none ${['♥️', '♦️'].includes(playedData.card.suit) ? 'text-red-600' : 'text-slate-900'}`}>
+                          <div className={`flex justify-between items-start font-black text-xs md:text-sm lg:text-base leading-none ${['♥️', '♦️'].includes(playedData.card.suit) ? 'text-red-600' : 'text-slate-900'}`}>
                             <span>{playedData.card.value === 14 || playedData.card.value === 1 ? 'A' : playedData.card.value === 13 ? 'K' : playedData.card.value === 12 ? 'Q' : playedData.card.value === 11 ? 'J' : playedData.card.value}</span>
-                            <span className="text-lg">{playedData.card.suit}</span>
+                            <span className="text-sm md:text-base lg:text-lg">{playedData.card.suit}</span>
                           </div>
 
-                          <div className={`flex items-center justify-center text-4xl flex-1 drop-shadow-sm`}>
+                          <div className={`flex items-center justify-center text-xl md:text-2xl lg:text-4xl flex-1 drop-shadow-sm`}>
                             {playedData.card.suit}
                           </div>
 
-                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-tighter text-center border-t border-slate-100 pt-1 truncate w-full">
-                            {roomData.seats[seatIdx].name}
+                          <div className="text-[7px] md:text-[8px] lg:text-[9px] font-black text-slate-500 uppercase tracking-tighter text-center border-t border-slate-100 pt-0.5 md:pt-1 truncate w-full">
+                            {roomData.seats[seatIdx].name.split(' ')[0]}
                           </div>
                         </div>
                       ) : (
-                        <div className="w-16 h-24 bg-black/40 border-2 border-dashed border-white/5 rounded-xl flex items-center justify-center">
-                          <span className="text-white/5 text-[8px] font-black uppercase">EMPTY</span>
+                        <div className="w-12 h-18 md:w-16 md:h-24 bg-black/40 border-2 border-dashed border-white/5 rounded-lg md:rounded-xl flex items-center justify-center">
+                          <span className="text-white/5 text-[7px] md:text-[8px] font-black uppercase">EMPTY</span>
                         </div>
                       )}
                     </div>
@@ -1031,9 +1036,9 @@ export default function Room() {
               </div>
 
               {/* Footer Status */}
-              <div className="absolute bottom-8 flex justify-center w-full">
-                <div className={`px-6 py-2 rounded-xl font-black uppercase tracking-[0.2em] text-[10px] shadow-xl border transition-all ${trumpAnnouncement.isTrumpWin ? 'bg-emerald-500 text-black border-white animate-bounce' : 'bg-white/5 text-white/20 border-white/5'}`}>
-                  {trumpAnnouncement.isTrumpWin ? 'TRUMP POWER USED' : 'NORMAL VICTORY'}
+              <div className="absolute bottom-2 md:bottom-4 lg:bottom-8 flex justify-center w-full">
+                <div className={`px-3 md:px-4 lg:px-6 py-1 md:py-1.5 lg:py-2 rounded-lg md:rounded-xl font-black uppercase tracking-[0.1em] md:tracking-[0.2em] text-[8px] md:text-[9px] lg:text-[10px] shadow-xl border transition-all ${trumpAnnouncement.isTrumpWin ? 'bg-emerald-500 text-black border-white animate-bounce' : 'bg-white/5 text-white/20 border-white/5'}`}>
+                  {trumpAnnouncement.isTrumpWin ? 'TRUMP' : 'NORMAL'}
                 </div>
               </div>
             </div>
@@ -1042,8 +1047,8 @@ export default function Room() {
 
         {/* Trick Round HUD (Floating) */}
         {(roomData.status === 'playing' || roomData.status === 'round_over') && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-48 z-40 opacity-40">
-            <span className="text-2xl font-black text-emerald-500 uppercase tracking-[0.5em]">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-24 md:-translate-y-36 lg:-translate-y-48 z-40 opacity-40">
+            <span className="text-sm md:text-lg lg:text-2xl font-black text-emerald-500 uppercase tracking-[0.2em] md:tracking-[0.5em]">
               TRICK {Math.min(roomData.trickCount || 1, 13)} / 13
             </span>
           </div>
@@ -1052,24 +1057,25 @@ export default function Room() {
         {/* Trick Zone: Center of Table (Compass Formation) */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           {roomData.status === 'playing' ? (
-            <div className="relative w-20 h-28">
+            <div className="relative w-12 h-16 md:w-16 md:h-24 lg:w-20 lg:h-28">
               {roomData.currentTrick?.map((item, idx) => {
                 const pos = getRelativePosition(item.seatIndex);
                 let transformStyle = {};
 
-                // Compass Formation Logic
+                // Compass Formation Logic - Responsive
+                const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
                 switch (pos) {
-                  case "bottom": transformStyle = { transform: 'translateY(60px) rotate(0deg)' }; break;
-                  case "left": transformStyle = { transform: 'translateX(-80px) rotate(-10deg)' }; break;
-                  case "top": transformStyle = { transform: 'translateY(-60px) rotate(0deg)' }; break;
-                  case "right": transformStyle = { transform: 'translateX(80px) rotate(10deg)' }; break;
+                  case "bottom": transformStyle = { transform: isMobile ? 'translateY(30px) rotate(0deg)' : 'translateY(60px) rotate(0deg)' }; break;
+                  case "left": transformStyle = { transform: isMobile ? 'translateX(-40px) rotate(-10deg)' : 'translateX(-80px) rotate(-10deg)' }; break;
+                  case "top": transformStyle = { transform: isMobile ? 'translateY(-30px) rotate(0deg)' : 'translateY(-60px) rotate(0deg)' }; break;
+                  case "right": transformStyle = { transform: isMobile ? 'translateX(40px) rotate(10deg)' : 'translateX(80px) rotate(10deg)' }; break;
                 }
 
                 return (
                   <div
                     key={idx}
                     style={transformStyle}
-                    className="absolute inset-0 w-20 h-28 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.6)] transition-all duration-700 ease-out border border-white/10"
+                    className="absolute inset-0 w-12 h-16 md:w-16 md:h-24 lg:w-20 lg:h-28 rounded-lg md:rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.6)] transition-all duration-700 ease-out border border-white/10"
                   >
                     {item.isFaceDown ? (
                       <div className="w-full h-full bg-emerald-950 border-2 border-emerald-500/30 rounded-xl flex items-center justify-center p-1">
@@ -1086,14 +1092,14 @@ export default function Room() {
                           </div>
                         )}
 
-                        <div className="flex justify-between items-start font-bold text-xs">
+                        <div className="flex justify-between items-start font-bold text-[8px] md:text-[10px] lg:text-xs">
                           <span className={['♥️', '♦️'].includes(item.card.suit) ? 'text-red-600' : 'text-black'}>
                             {item.card.value === 1 ? 'A' : item.card.value === 11 ? 'J' : item.card.value === 12 ? 'Q' : item.card.value === 13 ? 'K' : item.card.value}
                           </span>
-                          <span>{item.card.suit}</span>
+                          <span className="text-[10px] md:text-sm">{item.card.suit}</span>
                         </div>
-                        <div className="text-4xl text-center self-center">{item.card.suit}</div>
-                        <div className="flex justify-end items-end font-bold text-xs rotate-180">
+                        <div className="text-xl md:text-2xl lg:text-4xl text-center self-center">{item.card.suit}</div>
+                        <div className="flex justify-end items-end font-bold text-[8px] md:text-[10px] lg:text-xs rotate-180">
                           <span>{item.card.suit}</span>
                           <span className={['♥️', '♦️'].includes(item.card.suit) ? 'text-red-600' : 'text-black'}>
                             {item.card.value === 1 ? 'A' : item.card.value === 11 ? 'J' : item.card.value === 12 ? 'Q' : item.card.value === 13 ? 'K' : item.card.value}
@@ -1106,26 +1112,26 @@ export default function Room() {
               })}
             </div>
           ) : roomData.status === 'betting' ? (
-            <div className="flex flex-col items-center gap-2 bg-black/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/10 pointer-events-auto">
-              <p className="text-xs font-black text-yellow-500 uppercase tracking-[0.5em] animate-pulse">Betting Phase</p>
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col items-center gap-2 bg-black/40 backdrop-blur-xl p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-3xl lg:rounded-[40px] border border-white/10 pointer-events-auto">
+              <p className="text-[10px] md:text-xs font-black text-yellow-500 uppercase tracking-[0.3em] md:tracking-[0.5em] animate-pulse">Betting Phase</p>
+              <div className="flex items-center gap-2 md:gap-4">
                 {roomData.seats.map((s, i) => s.type !== 'empty' && (
-                  <div key={i} className={`w-3 h-3 rounded-full ${roomData.bets?.[i] ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-white/10'}`}></div>
+                  <div key={i} className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${roomData.bets?.[i] ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-white/10'}`}></div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="bg-black/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/10 pointer-events-auto text-center">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Awaiting Players</p>
+            <div className="bg-black/40 backdrop-blur-xl p-4 md:p-6 lg:p-8 rounded-2xl md:rounded-3xl lg:rounded-[40px] border border-white/10 pointer-events-auto text-center">
+              <p className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-wider md:tracking-widest mb-2">Awaiting Players</p>
               {isHost && roomData.seats.filter(s => s.type !== 'empty').length >= 4 ? (
                 <button
                   onClick={initializeGame}
-                  className="px-10 py-4 bg-gradient-to-r from-emerald-500 to-green-600 rounded-2xl font-black text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/20"
+                  className="px-6 md:px-8 lg:px-10 py-3 md:py-4 bg-gradient-to-r from-emerald-500 to-green-600 rounded-xl md:rounded-2xl font-black text-sm md:text-lg lg:text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/20"
                 >
                   START GAME
                 </button>
               ) : (
-                <div className="text-sm text-slate-500 italic">Need at least 4 players or bot...</div>
+                <div className="text-xs md:text-sm text-slate-500 italic">Need at least 4 players or bot...</div>
               )}
             </div>
           )}
@@ -1134,17 +1140,17 @@ export default function Room() {
 
       {/* My Hand & Action Controls (Bottom) */}
       {(roomData.status === 'playing' || roomData.status === 'betting') && isUserSeated && (
-        <div className="fixed bottom-10 left-0 right-0 flex flex-col items-center gap-6 z-50">
+        <div className="fixed bottom-2 md:bottom-4 lg:bottom-10 left-0 right-0 flex flex-col items-center gap-3 md:gap-4 lg:gap-6 z-50 px-2">
 
           {/* Status Message */}
           {roomData.status === 'betting' && hasSubmittedBet && (
-            <div className="bg-emerald-500 text-black px-6 py-2 rounded-full font-black animate-bounce shadow-xl">
+            <div className="bg-emerald-500 text-black px-4 md:px-6 py-1.5 md:py-2 rounded-full font-black animate-bounce shadow-xl text-xs md:text-sm">
               MENUNGGU PEMAIN LAIN...
             </div>
           )}
 
           {/* Hand Cards - Dynamic Layout System */}
-          <div className="relative w-full max-w-4xl h-56 flex justify-center items-end select-none pointer-events-none">
+          <div className="relative w-full max-w-4xl h-32 md:h-40 lg:h-56 flex justify-center items-end select-none pointer-events-none">
             <div className="relative h-full w-full max-w-4xl pointer-events-auto">
               {roomData.seats[mySeatIndex].hand?.map((card, i) => {
                 const hand = roomData.seats[mySeatIndex].hand;
@@ -1211,12 +1217,12 @@ export default function Room() {
           </div>
 
           {/* Player Actions */}
-          <div className="flex items-center gap-4 animate-bounce-in">
+          <div className="flex items-center gap-2 md:gap-4 animate-bounce-in w-full justify-center">
             {roomData.status === 'betting' && !hasSubmittedBet && (
               <button
                 disabled={!selectedCard}
                 onClick={submitBet}
-                className={`px-12 py-5 rounded-2xl font-black text-xl shadow-2xl transition-all transform active:scale-95 ${selectedCard
+                className={`px-6 md:px-10 lg:px-12 py-3 md:py-4 lg:py-5 rounded-xl md:rounded-2xl font-black text-sm md:text-lg lg:text-xl shadow-2xl transition-all transform active:scale-95 w-full max-w-[200px] md:max-w-none ${selectedCard
                   ? "bg-yellow-400 text-black hover:bg-yellow-300 hover:scale-105 shadow-[0_0_30px_rgba(234,179,8,0.3)]"
                   : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
                   }`}
@@ -1229,7 +1235,7 @@ export default function Room() {
               <button
                 disabled={!selectedCard}
                 onClick={handlePlayCard}
-                className={`px-12 py-5 rounded-2xl font-black text-xl shadow-2xl transition-all transform active:scale-95 ${selectedCard
+                className={`px-6 md:px-10 lg:px-12 py-3 md:py-4 lg:py-5 rounded-xl md:rounded-2xl font-black text-sm md:text-lg lg:text-xl shadow-2xl transition-all transform active:scale-95 w-full max-w-[200px] md:max-w-none ${selectedCard
                   ? "bg-emerald-500 text-black hover:bg-emerald-400 hover:scale-105 shadow-[0_0_30px_rgba(16,185,129,0.3)]"
                   : "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
                   }`}
@@ -1245,24 +1251,24 @@ export default function Room() {
 
       {/* Round Result Modal */}
       {roomData.status === 'round_over' && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-[100] flex flex-col items-center justify-center p-4 md:p-10 animate-fade-in overflow-y-auto">
-          <div className="w-full max-w-3xl bg-slate-900/50 p-6 md:p-12 rounded-[50px] border border-white/10 shadow-2xl text-center relative">
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-[100] flex flex-col items-center justify-center p-2 md:p-4 lg:p-10 animate-fade-in overflow-y-auto">
+          <div className="w-full max-w-3xl bg-slate-900/50 p-4 md:p-6 lg:p-12 rounded-2xl md:rounded-3xl lg:rounded-[50px] border border-white/10 shadow-2xl text-center relative">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent"></div>
 
-            <h2 className="text-3xl md:text-5xl font-black italic tracking-tighter text-white mb-2 uppercase">Round {roomData.roundNumber || 1} Complete</h2>
-            <p className="text-emerald-500 font-bold tracking-[0.4em] text-[10px] md:text-xs uppercase mb-10">Battle Arena Summary</p>
+            <h2 className="text-xl md:text-3xl lg:text-5xl font-black italic tracking-tighter text-white mb-2 uppercase">Round {roomData.roundNumber || 1} Complete</h2>
+            <p className="text-emerald-500 font-bold tracking-[0.2em] md:tracking-[0.4em] text-[9px] md:text-[10px] lg:text-xs uppercase mb-4 md:mb-6 lg:mb-10">Battle Arena Summary</p>
 
             {/* Stats Table */}
-            <div className="w-full overflow-hidden rounded-3xl border border-white/5 bg-black/40 mb-10">
-              <table className="w-full text-left border-collapse">
+            <div className="w-full overflow-x-auto overflow-hidden rounded-xl md:rounded-2xl lg:rounded-3xl border border-white/5 bg-black/40 mb-4 md:mb-6 lg:mb-10">
+              <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
-                  <tr className="bg-white/5 text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-500">
-                    <th className="px-6 py-4">Warrior</th>
-                    <th className="px-6 py-4 text-center">Target (Bid)</th>
-                    <th className="px-6 py-4 text-center">Actual (Won)</th>
-                    <th className="px-6 py-4 text-center">Verdict</th>
-                    <th className="px-6 py-4 text-center">Round Score</th>
-                    <th className="px-6 py-4 text-right">Total Score</th>
+                  <tr className="bg-white/5 text-[8px] md:text-[9px] lg:text-[10px] xl:text-xs font-black uppercase tracking-wider md:tracking-widest text-slate-500">
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4">Warrior</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">Bid</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">Won</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">Verdict</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">Score</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -1289,25 +1295,25 @@ export default function Room() {
                     }
 
                     return (
-                      <tr key={i} className={`text-xs md:text-sm group hover:bg-white/5 transition-colors`}>
-                        <td className="px-6 py-4 flex items-center gap-3">
-                          <img src={seat.avatar} className={`w-8 h-8 rounded-full border ${passed ? 'border-emerald-500' : 'border-red-500'}`} />
-                          <span className="font-bold text-white uppercase">{seat.name}</span>
+                      <tr key={i} className={`text-[10px] md:text-xs lg:text-sm group hover:bg-white/5 transition-colors`}>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 flex items-center gap-2 md:gap-3">
+                          <img src={seat.avatar} className={`w-6 h-6 md:w-7 md:h-7 lg:w-8 lg:h-8 rounded-full border ${passed ? 'border-emerald-500' : 'border-red-500'}`} />
+                          <span className="font-bold text-white uppercase truncate max-w-[80px] md:max-w-none">{seat.name.split(' ')[0]}</span>
                         </td>
-                        <td className="px-6 py-4 text-center font-mono font-bold text-slate-400">{bid}</td>
-                        <td className="px-6 py-4 text-center font-mono font-bold text-white">{won}</td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${passed ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                            {passed ? 'PASSED' : 'FAILED'}
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center font-mono font-bold text-slate-400">{bid}</td>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center font-mono font-bold text-white">{won}</td>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">
+                          <span className={`px-2 md:px-3 py-0.5 md:py-1 rounded-full text-[8px] md:text-[9px] font-black uppercase tracking-tighter ${passed ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                            {passed ? 'PASS' : 'FAIL'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`font-black text-lg ${roundScore >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">
+                          <span className={`font-black text-sm md:text-base lg:text-lg ${roundScore >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {roundScore > 0 ? `+${roundScore}` : roundScore}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="font-black text-lg text-white">{seat.score || 0}</span>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-right">
+                          <span className="font-black text-sm md:text-base lg:text-lg text-white">{seat.score || 0}</span>
                         </td>
                       </tr>
                     );
@@ -1319,12 +1325,12 @@ export default function Room() {
             {isHost ? (
               <button
                 onClick={handleNextRound}
-                className="w-full py-6 md:py-8 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xl md:text-2xl rounded-[30px] transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] active:scale-95 uppercase tracking-tighter italic"
+                className="w-full py-4 md:py-6 lg:py-8 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-base md:text-xl lg:text-2xl rounded-2xl md:rounded-3xl lg:rounded-[30px] transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] active:scale-95 uppercase tracking-tighter italic"
               >
                 Start Next Round
               </button>
             ) : (
-              <div className="p-6 bg-white/5 border border-white/5 rounded-[30px] text-slate-400 italic font-bold text-sm md:text-base animate-pulse">
+              <div className="p-4 md:p-6 bg-white/5 border border-white/5 rounded-2xl md:rounded-3xl lg:rounded-[30px] text-slate-400 italic font-bold text-xs md:text-sm lg:text-base animate-pulse">
                 Waiting for the host to initiate the next battle...
               </div>
             )}
