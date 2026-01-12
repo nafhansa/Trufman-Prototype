@@ -945,6 +945,12 @@ export default function Room() {
               {/* Central Table Visual */}
               <div className="relative w-32 h-32 bg-white/5 rounded-full border border-white/10 flex items-center justify-center shadow-inner">
                 <div className="text-white/5 font-black text-4xl italic select-none">TRUF</div>
+                {/* Winner Indicator - Center Only */}
+                {trumpAnnouncement?.winnerSeatIndex !== undefined && (
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-yellow-400 text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg z-[150] border-2 border-black whitespace-nowrap animate-pulse">
+                    WINNER
+                  </div>
+                )}
 
                 {/* Compass Cards */}
                 {[0, 1, 2, 3].map(seatIdx => {
@@ -964,11 +970,6 @@ export default function Room() {
                     <div key={seatIdx} className={`absolute transition-all duration-700 ${posClass} ${playedData ? 'opacity-100 scale-100' : 'opacity-10 scale-75'}`}>
                       {playedData ? (
                         <div className={`relative w-20 h-30 bg-white rounded-xl shadow-2xl border-2 flex flex-col justify-between p-2.5 transform ${isWinner ? 'border-yellow-400 scale-110 z-50 shadow-[0_0_40px_rgba(234,179,8,0.5)] animate-pulse' : 'border-slate-300'}`}>
-                          {isWinner && (
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-yellow-400 text-black text-[8px] font-black px-2 py-0.5 rounded-full shadow-lg z-50 border border-black whitespace-nowrap">
-                              WINNER
-                            </div>
-                          )}
 
                           <div className={`flex justify-between items-start font-black text-base leading-none ${['♥️', '♦️'].includes(playedData.card.suit) ? 'text-red-600' : 'text-slate-900'}`}>
                             <span>{playedData.card.value === 14 || playedData.card.value === 1 ? 'A' : playedData.card.value === 13 ? 'K' : playedData.card.value === 12 ? 'Q' : playedData.card.value === 11 ? 'J' : playedData.card.value}</span>
