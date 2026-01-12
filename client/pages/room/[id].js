@@ -492,7 +492,14 @@ export default function Room() {
 
       // 1. CRITICAL CHECK: Check if Round is Over (13 tricks played)
       if (nextTrickCount > 13) {
-        updateFields.status = 'round_over';
+        const currentRound = roomData.roundNumber || 1;
+        
+        // Check if this is the final round (round 4)
+        if (currentRound >= 4) {
+          updateFields.status = 'game_over'; // Final game over
+        } else {
+          updateFields.status = 'round_over'; // Just round over, can continue
+        }
         updateFields.turnIndex = null; // Stop anyone from moving
 
         // Final Score Calculation
@@ -546,6 +553,12 @@ export default function Room() {
 
   const handleNextRound = async () => {
     if (!isHost || !docId) return;
+    
+    // Check if we've reached max rounds (4 rounds)
+    if ((roomData.roundNumber || 1) >= 4) {
+      // Don't allow starting round 5
+      return;
+    }
 
     // 1. Hard Reset & Deck Generation
     const suits = ['♠️', '♥️', '♣️', '♦️'];
@@ -1322,18 +1335,98 @@ export default function Room() {
               </table>
             </div>
 
-            {isHost ? (
+            {isHost && (roomData.roundNumber || 1) < 4 ? (
               <button
                 onClick={handleNextRound}
                 className="w-full py-4 md:py-6 lg:py-8 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-base md:text-xl lg:text-2xl rounded-2xl md:rounded-3xl lg:rounded-[30px] transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] active:scale-95 uppercase tracking-tighter italic"
               >
                 Start Next Round
               </button>
+            ) : (roomData.roundNumber || 1) >= 4 ? (
+              <div className="p-4 md:p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl md:rounded-3xl lg:rounded-[30px] text-emerald-400 font-bold text-xs md:text-sm lg:text-base">
+                Final Round Complete! Check Final Scoreboard.
+              </div>
             ) : (
               <div className="p-4 md:p-6 bg-white/5 border border-white/5 rounded-2xl md:rounded-3xl lg:rounded-[30px] text-slate-400 italic font-bold text-xs md:text-sm lg:text-base animate-pulse">
                 Waiting for the host to initiate the next battle...
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Final Scoreboard Modal - After 4 Rounds */}
+      {roomData.status === 'game_over' && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-[100] flex flex-col items-center justify-center p-2 md:p-4 lg:p-10 animate-fade-in overflow-y-auto">
+          <div className="w-full max-w-4xl bg-slate-900/50 p-4 md:p-6 lg:p-12 rounded-2xl md:rounded-3xl lg:rounded-[50px] border border-white/10 shadow-2xl text-center relative">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-yellow-500 to-transparent"></div>
+
+            <h2 className="text-2xl md:text-4xl lg:text-6xl font-black italic tracking-tighter text-yellow-400 mb-2 uppercase drop-shadow-[0_0_20px_rgba(234,179,8,0.5)]">
+              🏆 GAME COMPLETE 🏆
+            </h2>
+            <p className="text-emerald-500 font-bold tracking-[0.2em] md:tracking-[0.4em] text-[10px] md:text-xs uppercase mb-2">All 4 Rounds Finished</p>
+            <p className="text-slate-400 text-xs md:text-sm mb-6 md:mb-8">Final Standings</p>
+
+            {/* Final Scoreboard */}
+            <div className="w-full overflow-x-auto overflow-hidden rounded-xl md:rounded-2xl lg:rounded-3xl border border-white/5 bg-black/40 mb-4 md:mb-6 lg:mb-10">
+              <table className="w-full text-left border-collapse min-w-[400px]">
+                <thead>
+                  <tr className="bg-white/5 text-[8px] md:text-[9px] lg:text-[10px] xl:text-xs font-black uppercase tracking-wider md:tracking-widest text-slate-500">
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4">Rank</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4">Warrior</th>
+                    <th className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-right">Final Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {roomData.seats.filter(s => s.type !== 'empty').sort((a, b) => {
+                    // Sort by total score descending
+                    return (b.score || 0) - (a.score || 0);
+                  }).map((seat, i) => {
+                    const isWinner = i === 0;
+                    return (
+                      <tr key={i} className={`text-[10px] md:text-xs lg:text-sm group hover:bg-white/5 transition-colors ${isWinner ? 'bg-yellow-500/10 border-l-4 border-yellow-500' : ''}`}>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-center">
+                          <span className={`font-black text-lg md:text-xl lg:text-2xl ${isWinner ? 'text-yellow-400' : 'text-slate-400'}`}>
+                            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
+                          </span>
+                        </td>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 flex items-center gap-2 md:gap-3">
+                          <img src={seat.avatar} className={`w-8 h-8 md:w-10 md:h-10 lg:w-12 lg:h-12 rounded-full border-2 ${isWinner ? 'border-yellow-400 shadow-[0_0_20px_rgba(234,179,8,0.5)]' : 'border-white/20'}`} />
+                          <div className="flex flex-col">
+                            <span className={`font-bold uppercase ${isWinner ? 'text-yellow-400' : 'text-white'}`}>
+                              {seat.name}
+                            </span>
+                            {seat.type === 'bot' && (
+                              <span className="text-[8px] text-slate-500">BOT</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 md:px-4 lg:px-6 py-2 md:py-3 lg:py-4 text-right">
+                          <span className={`font-black text-xl md:text-2xl lg:text-3xl ${isWinner ? 'text-yellow-400' : 'text-white'}`}>
+                            {seat.score || 0}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex-1 py-4 md:py-6 bg-slate-700 hover:bg-slate-600 text-white font-black text-base md:text-xl rounded-2xl md:rounded-3xl transition-all shadow-xl active:scale-95 uppercase"
+              >
+                Back to Dashboard
+              </button>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="flex-1 py-4 md:py-6 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-base md:text-xl rounded-2xl md:rounded-3xl transition-all shadow-[0_0_50px_rgba(16,185,129,0.3)] active:scale-95 uppercase"
+              >
+                New Game
+              </button>
+            </div>
           </div>
         </div>
       )}
