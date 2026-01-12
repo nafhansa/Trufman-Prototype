@@ -494,6 +494,8 @@ export default function Room() {
             let roundScore = 0;
 
             if (won === bid) {
+              // SUCCESS: If bid is 0, get +4. Otherwise, get the bid value itself
+              roundScore = bid === 0 ? 4 : bid;
             } else {
               // FAILURE
               if (isAtas) {
@@ -539,13 +541,21 @@ export default function Room() {
     const newSeats = [...roomData.seats];
     newSeats.forEach(s => s.hand = []); // Clear existing hands
 
+    // Get only filled seats (non-empty)
+    const filledSeats = newSeats.map((seat, idx) => ({ seat, idx })).filter(({ seat }) => seat.type !== 'empty');
+    
+    if (filledSeats.length === 0) {
+      throw new Error("No players in seats");
+    }
+
+    // Deal cards only to filled seats
     for (let i = 0; i < 52; i++) {
-      let playerIndex = i % 4;
-      newSeats[playerIndex].hand.push(deck[i]);
+      const seatIndex = filledSeats[i % filledSeats.length].idx;
+      newSeats[seatIndex].hand.push(deck[i]);
     }
 
     // 4. Final Validation
-    newSeats.forEach((seat, idx) => {
+    filledSeats.forEach(({ seat, idx }) => {
       if (seat.hand.length !== 13) {
         console.error(`CRITICAL DEAL ERROR: Seat ${idx} has ${seat.hand.length} cards`);
         throw new Error("CRITICAL DEAL ERROR");
@@ -638,13 +648,21 @@ export default function Room() {
     const newSeats = [...roomData.seats];
     newSeats.forEach(s => s.hand = []); // Clear existing hands
 
+    // Get only filled seats (non-empty)
+    const filledSeats = newSeats.map((seat, idx) => ({ seat, idx })).filter(({ seat }) => seat.type !== 'empty');
+    
+    if (filledSeats.length === 0) {
+      throw new Error("No players in seats");
+    }
+
+    // Deal cards only to filled seats
     for (let i = 0; i < 52; i++) {
-      let playerIndex = i % 4;
-      newSeats[playerIndex].hand.push(deck[i]);
+      const seatIndex = filledSeats[i % filledSeats.length].idx;
+      newSeats[seatIndex].hand.push(deck[i]);
     }
 
     // 4. Final Validation
-    newSeats.forEach((seat, idx) => {
+    filledSeats.forEach(({ seat, idx }) => {
       if (seat.hand.length !== 13) {
         console.error(`CRITICAL DEAL ERROR: Seat ${idx} has ${seat.hand.length} cards`);
         throw new Error("CRITICAL DEAL ERROR");
@@ -1241,7 +1259,7 @@ export default function Room() {
                     const isAtas = roomData.strategy === "ATAS";
 
                     if (passed) {
-                      roundScore = bid === 0 ? 50 : bid * 10;
+                      roundScore = bid === 0 ? 4 : bid;
                     } else {
                       if (isAtas) {
                         roundScore = won > bid ? diff * -1 : diff * -2;
