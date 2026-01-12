@@ -132,6 +132,7 @@ export default function Room() {
   const [selectedCard, setSelectedCard] = useState(null);
   const [hasSubmittedBet, setHasSubmittedBet] = useState(false);
   const isProcessingRoundStart = useRef(false);
+  const isProcessingTrickEnd = useRef(false);
   const [trumpAnnouncement, setTrumpAnnouncement] = useState(null);
 
 
@@ -358,7 +359,7 @@ export default function Room() {
           const trufSuit = roomData.trufSuit || '♠️';
           const history = roomData.playedCards || [];
           const cardToPlay = getBestMove(hand, roomData.currentTrick || [], trufSuit, roomData.isTrumpBroken, history);
-          const isFaceDown = cardToPlay.suit === trufSuit;
+          const isFaceDown = cardToPlay.suit === trufSuit && !roomData.isTrumpRevealed;
           const isLead = (roomData.currentTrick || []).length === 0;
 
           // Update Broken status
@@ -379,8 +380,15 @@ export default function Room() {
           }];
 
           let nextTurn = (roomData.turnIndex + 1) % 4;
-          while (roomData.seats[nextTurn].type === 'empty') {
+          let attempts = 0;
+          while (roomData.seats[nextTurn].type === 'empty' && attempts < 4) {
             nextTurn = (nextTurn + 1) % 4;
+            attempts++;
+          }
+          // Safety check: if all seats are empty, keep current turn
+          if (roomData.seats[nextTurn].type === 'empty') {
+            console.error('All seats are empty, cannot proceed');
+            return;
           }
 
           const updateFields = {
@@ -400,11 +408,6 @@ export default function Room() {
           }
 
           await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
-
-          // If trick complete, trigger clear logic
-          if (newTrick.length === 4) {
-            handleEndTrick(newTrick);
-          }
         }, 2500);
         return () => clearTimeout(timer);
       }
@@ -449,8 +452,18 @@ export default function Room() {
   };
 
   // Handle End of Trick (Host Only)
-  const handleEndTrick = async (finishedTrick) => {
+  const handleEndTrick = async (finishedTrickParam) => {
     if (!isHost || !docId) return;
+
+    // Prevent race condition: if already processing, skip
+    if (isProcessingTrickEnd.current) return;
+
+    // Get trick data, prioritize parameter, fallback to room data
+    const finishedTrick = finishedTrickParam || roomData?.currentTrick || [];
+    if (!finishedTrick || finishedTrick.length === 0) return;
+
+    // Lock processing
+    isProcessingTrickEnd.current = true;
 
     setTimeout(async () => {
       const winner = determineWinner(finishedTrick);
@@ -516,9 +529,20 @@ export default function Room() {
       }
 
       await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
+      
+      // Unlock processing after update
+      isProcessingTrickEnd.current = false;
     }, 3000);
   };
 
+  // Auto-clear trick when 4 cards are played (Host Only)
+  useEffect(() => {
+    if (!isHost || !roomData) return;
+    // If table is full with 4 cards, host automatically calls cleaning service
+    if (roomData.currentTrick?.length === 4) {
+      handleEndTrick();
+    }
+  }, [roomData?.currentTrick?.length, isHost]);
 
   const handleNextRound = async () => {
     if (!isHost || !docId) return;
@@ -781,10 +805,6 @@ export default function Room() {
     }
 
     await safeUpdate(doc(getFirestoreInstance(), "rooms", docId), updateFields);
-
-    if (newTrick.length === 4) {
-      handleEndTrick(newTrick);
-    }
     setSelectedCard(null);
   };
 
