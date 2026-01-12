@@ -494,8 +494,6 @@ export default function Room() {
             let roundScore = 0;
 
             if (won === bid) {
-              // SUCCESS: Bid * 10 (or 50 if bid is 0)
-              roundScore = bid === 0 ? 50 : bid * 10;
             } else {
               // FAILURE
               if (isAtas) {
